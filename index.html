@@ -162,47 +162,36 @@
 
 <script>
 // ====== Configuration ======
-const TOTAL_VIDEOS = 30;                    // Total number of experiment videos (14 music + 16 dialogues)
-const VIDEOS_PER_SESSION = 10;              // Videos per session (3 sessions total)
-const TOTAL_SESSIONS = 3;                    // Number of sessions
+const TOTAL_VIDEOS = 30;
+const VIDEOS_PER_SESSION = 10;
+const TOTAL_SESSIONS = 3;
 
-const STORAGE_KEY_PROGRESS = 'seeg_kor_v8_progress';    // Progress storage key
-const STORAGE_KEY_NAME = 'seeg_kor_v8_name';            // Participant name storage key
-const STORAGE_KEY_ALL_DATA = 'seeg_kor_v8_alldata';     // Complete data backup key
-const STORAGE_KEY_SESSION = 'seeg_kor_v8_session';      // Current session key
-const STORAGE_KEY_VIDEO_ORDER = 'seeg_kor_v8_order';    // Randomized video order key
-const STORAGE_KEY_SESSION_START = 'seeg_kor_v8_session_start'; // Session start time key
-const STORAGE_KEY_UPLOAD_QUEUE = 'seeg_kor_v8_upload_queue'; // Pending uploads queue
+const STORAGE_KEY_PROGRESS = 'seeg_kor_v8_progress';
+const STORAGE_KEY_NAME = 'seeg_kor_v8_name';
+const STORAGE_KEY_ALL_DATA = 'seeg_kor_v8_alldata';
+const STORAGE_KEY_SESSION = 'seeg_kor_v8_session';
+const STORAGE_KEY_VIDEO_ORDER = 'seeg_kor_v8_order';
+const STORAGE_KEY_SESSION_START = 'seeg_kor_v8_session_start';
 
-// Video category definitions (1-14: music, 15-30: dialogues)
+// Video category definitions
 const VIDEO_CATEGORIES = {
-    // Music videos (1-14)
     1: 'music', 2: 'music', 3: 'music', 4: 'music', 5: 'music',
     6: 'music', 7: 'music', 8: 'music', 9: 'music', 10: 'music',
     11: 'music', 12: 'music', 13: 'music', 14: 'music',
-    
-    // Dialogue videos (15-30)
     15: 'dialogues', 16: 'dialogues', 17: 'dialogues', 18: 'dialogues', 19: 'dialogues',
     20: 'dialogues', 21: 'dialogues', 22: 'dialogues', 23: 'dialogues', 24: 'dialogues',
     25: 'dialogues', 26: 'dialogues', 27: 'dialogues', 28: 'dialogues', 29: 'dialogues',
     30: 'dialogues'
 };
 
-// Global state variables
-let currentSession = 1;                      // Current session (1, 2, or 3)
-let videoOrder = [];                         // Randomized video order [v1, v2, ..., v30]
-let sessionVideos = {                         // Videos in each session
-    1: [],  // 10 random videos
-    2: [],  // 10 random videos
-    3: []   // 10 random videos
-};
-let currentVideoIndexInSession = 0;           // Current video position within session
-let isPracticeMode = false;                   // Whether currently in practice mode
-let currentEvents = [];                       // Events for current video
-let sessionStartTime = null;                   // Session start timestamp
-let failedUploads = [];                        // Queue of failed uploads
-let videoUploadedCount = 0;                    // Counter for uploaded videos in current session
-let isWaitingForNextSession = false;            // Flag to indicate waiting for next session
+// Global state
+let currentSession = 1;
+let videoOrder = [];
+let sessionVideos = {1: [], 2: [], 3: []};
+let currentVideoIndexInSession = 0;
+let isPracticeMode = false;
+let currentEvents = [];
+let sessionStartTime = null;
 
 // Auto-fill name on load
 window.addEventListener('DOMContentLoaded', () => {
@@ -210,134 +199,16 @@ window.addEventListener('DOMContentLoaded', () => {
     if(savedName) {
         document.getElementById('participantName').value = savedName;
     }
-    
-    // Check for unfinished experiment
-    const savedProgress = localStorage.getItem(STORAGE_KEY_PROGRESS);
-    
-    if (savedProgress) {
-        setTimeout(() => {
-            if (confirm('이전에 진행하던 실험이 있습니다. 계속하시겠습니까? (You have an unfinished experiment. Continue?)')) {
-                document.getElementById('agreeBtn').click();
-            }
-        }, 500);
-    }
-    
-    // Check for failed uploads
-    checkFailedUploads();
 });
 
-/**
- * Safe play function to handle play() interruptions
- */
-async function safePlay(videoElement) {
-    if (!videoElement) return;
-    
-    try {
-        if (videoElement.paused) {
-            await videoElement.play();
-        }
-    } catch (error) {
-        if (error.name !== 'AbortError') {
-            console.error('Play error:', error);
-        }
-    }
-}
-
-/**
- * Show upload status message
- */
-function showUploadStatus(message, isError = false) {
-    const statusEl = document.getElementById('uploadStatus');
-    statusEl.style.display = 'block';
-    statusEl.style.color = isError ? '#FF5252' : '#4CAF50';
-    statusEl.textContent = message;
-    
-    setTimeout(() => {
-        statusEl.style.display = 'none';
-    }, 3000);
-}
-
-/**
- * Check and retry failed uploads
- */
-async function checkFailedUploads() {
-    const failed = localStorage.getItem(STORAGE_KEY_UPLOAD_QUEUE);
-    if (failed) {
-        failedUploads = JSON.parse(failed);
-        if (failedUploads.length > 0) {
-            console.log(`Retrying ${failedUploads.length} failed uploads...`);
-            for (let upload of failedUploads) {
-                await retryUpload(upload);
-            }
-        }
-    }
-}
-
-/**
- * Add to failed uploads queue
- */
-function addToFailedUploads(uploadData) {
-    failedUploads.push(uploadData);
-    localStorage.setItem(STORAGE_KEY_UPLOAD_QUEUE, JSON.stringify(failedUploads));
-}
-
-/**
- * Remove from failed uploads queue
- */
-function removeFromFailedUploads(uploadData) {
-    failedUploads = failedUploads.filter(u => 
-        u.videoId !== uploadData.videoId || 
-        u.timestamp !== uploadData.timestamp
-    );
-    localStorage.setItem(STORAGE_KEY_UPLOAD_QUEUE, JSON.stringify(failedUploads));
-}
-
-/**
- * Retry a failed upload
- */
-async function retryUpload(uploadData) {
-    try {
-        await performUpload(uploadData);
-        removeFromFailedUploads(uploadData);
-        console.log(`✅ Retry successful for video ${uploadData.videoId}`);
-    } catch (e) {
-        console.error(`❌ Retry failed for video ${uploadData.videoId}`);
-    }
-}
-
-/**
- * Perform the actual upload
- */
-async function performUpload(uploadData) {
-    const { formData } = uploadData;
-    
-    const response = await fetch('/', { 
-        method: 'POST', 
-        body: formData,
-        headers: {
-            'Accept': 'application/json'
-        }
-    });
-    
-    if (!response.ok) {
-        throw new Error(`Upload failed with status ${response.status}`);
-    }
-    
-    return response;
-}
-
-/**
- * Get participant ID from input or localStorage
- */
+// Get participant ID
 function getParticipantID() {
     let name = document.getElementById('participantName').value.trim();
     if(!name) name = localStorage.getItem(STORAGE_KEY_NAME) || "Unknown_User";
     return name;
 }
 
-/**
- * Fisher-Yates shuffle algorithm
- */
+// Shuffle array
 function shuffleArray(array) {
     const newArray = [...array];
     for (let i = newArray.length - 1; i > 0; i--) {
@@ -347,9 +218,7 @@ function shuffleArray(array) {
     return newArray;
 }
 
-/**
- * Initialize randomization for videos and sessions
- */
+// Initialize randomization
 function initializeRandomization() {
     const savedOrder = localStorage.getItem(STORAGE_KEY_VIDEO_ORDER);
     const savedSession = localStorage.getItem(STORAGE_KEY_SESSION);
@@ -357,131 +226,72 @@ function initializeRandomization() {
     if (savedOrder && savedSession) {
         videoOrder = JSON.parse(savedOrder);
         currentSession = parseInt(savedSession);
-        
         sessionVideos[1] = videoOrder.slice(0, 10);
         sessionVideos[2] = videoOrder.slice(10, 20);
         sessionVideos[3] = videoOrder.slice(20, 30);
-        
-        console.log('Session 1 videos:', sessionVideos[1]);
-        console.log('Session 2 videos:', sessionVideos[2]);
-        console.log('Session 3 videos:', sessionVideos[3]);
-        
-        const allVideos = [...sessionVideos[1], ...sessionVideos[2], ...sessionVideos[3]];
-        const uniqueVideos = new Set(allVideos);
-        if (uniqueVideos.size !== TOTAL_VIDEOS) {
-            console.error('Duplicate videos detected! Resetting randomization...');
-            localStorage.removeItem(STORAGE_KEY_VIDEO_ORDER);
-            createNewRandomization();
-        }
     } else {
-        createNewRandomization();
+        const allVideos = Array.from({length: TOTAL_VIDEOS}, (_, i) => i + 1);
+        videoOrder = shuffleArray(allVideos);
+        sessionVideos[1] = videoOrder.slice(0, 10);
+        sessionVideos[2] = videoOrder.slice(10, 20);
+        sessionVideos[3] = videoOrder.slice(20, 30);
+        localStorage.setItem(STORAGE_KEY_VIDEO_ORDER, JSON.stringify(videoOrder));
+        localStorage.setItem(STORAGE_KEY_SESSION, '1');
+        currentSession = 1;
     }
 }
 
-/**
- * Create new randomization
- */
-function createNewRandomization() {
-    const allVideos = Array.from({length: TOTAL_VIDEOS}, (_, i) => i + 1);
-    videoOrder = shuffleArray(allVideos);
-    
-    sessionVideos[1] = videoOrder.slice(0, 10);
-    sessionVideos[2] = videoOrder.slice(10, 20);
-    sessionVideos[3] = videoOrder.slice(20, 30);
-    
-    const allVideosCheck = [...sessionVideos[1], ...sessionVideos[2], ...sessionVideos[3]];
-    const uniqueVideos = new Set(allVideosCheck);
-    if (uniqueVideos.size !== TOTAL_VIDEOS) {
-        console.error('Duplicate videos in new randomization! Shuffling again...');
-        createNewRandomization();
-        return;
-    }
-    
-    localStorage.setItem(STORAGE_KEY_VIDEO_ORDER, JSON.stringify(videoOrder));
-    localStorage.setItem(STORAGE_KEY_SESSION, '1');
-    
-    currentSession = 1;
-    
-    console.log('New randomization created:');
-    console.log('Session 1 videos:', sessionVideos[1]);
-    console.log('Session 2 videos:', sessionVideos[2]);
-    console.log('Session 3 videos:', sessionVideos[3]);
-}
-
-/**
- * Show starter menu
- */
+// Show starter menu
 function showStarterMenu() {
     const starter = document.getElementById('starter');
     const startSelect = document.getElementById('startSelect');
     
     initializeRandomization();
-    
     const savedProgress = localStorage.getItem(STORAGE_KEY_PROGRESS);
     
     startSelect.innerHTML = '';
     
     const opt0 = document.createElement('option');
     opt0.value = '0_0';
-    opt0.textContent = "0. 처음부터 시작 (연습 영상 포함) - Start from beginning (with practice)";
-    if (!savedProgress) {
-        opt0.selected = true;
-    }
+    opt0.textContent = "0. 처음부터 시작 (연습 영상 포함)";
+    if (!savedProgress) opt0.selected = true;
     startSelect.appendChild(opt0);
     
-    const separator = document.createElement('option');
-    separator.disabled = true;
-    separator.textContent = "──────────────────";
-    startSelect.appendChild(separator);
+    startSelect.appendChild(Object.assign(document.createElement('option'), {disabled: true, textContent: "──────────────────"}));
     
-    for(let i = 0; i < VIDEOS_PER_SESSION; i++) {
+    for(let i = 0; i < 10; i++) {
         const opt = document.createElement('option');
         opt.value = `1_${i}`;
         opt.textContent = `Session 1 - 영상 ${i+1}`;
-        
         if (savedProgress) {
-            const progress = JSON.parse(savedProgress);
-            if (progress.session === 1 && progress.videoIndex === i) {
-                opt.selected = true;
-            }
+            const p = JSON.parse(savedProgress);
+            if (p.session === 1 && p.videoIndex === i) opt.selected = true;
         }
         startSelect.appendChild(opt);
     }
     
-    const separator2 = document.createElement('option');
-    separator2.disabled = true;
-    separator2.textContent = "──────────────────";
-    startSelect.appendChild(separator2);
+    startSelect.appendChild(Object.assign(document.createElement('option'), {disabled: true, textContent: "──────────────────"}));
     
-    for(let i = 0; i < VIDEOS_PER_SESSION; i++) {
+    for(let i = 0; i < 10; i++) {
         const opt = document.createElement('option');
         opt.value = `2_${i}`;
         opt.textContent = `Session 2 - 영상 ${i+1}`;
-        
         if (savedProgress) {
-            const progress = JSON.parse(savedProgress);
-            if (progress.session === 2 && progress.videoIndex === i) {
-                opt.selected = true;
-            }
+            const p = JSON.parse(savedProgress);
+            if (p.session === 2 && p.videoIndex === i) opt.selected = true;
         }
         startSelect.appendChild(opt);
     }
     
-    const separator3 = document.createElement('option');
-    separator3.disabled = true;
-    separator3.textContent = "──────────────────";
-    startSelect.appendChild(separator3);
+    startSelect.appendChild(Object.assign(document.createElement('option'), {disabled: true, textContent: "──────────────────"}));
     
-    for(let i = 0; i < VIDEOS_PER_SESSION; i++) {
+    for(let i = 0; i < 10; i++) {
         const opt = document.createElement('option');
         opt.value = `3_${i}`;
         opt.textContent = `Session 3 - 영상 ${i+1}`;
-        
         if (savedProgress) {
-            const progress = JSON.parse(savedProgress);
-            if (progress.session === 3 && progress.videoIndex === i) {
-                opt.selected = true;
-            }
+            const p = JSON.parse(savedProgress);
+            if (p.session === 3 && p.videoIndex === i) opt.selected = true;
         }
         startSelect.appendChild(opt);
     }
@@ -489,62 +299,49 @@ function showStarterMenu() {
     starter.style.display = 'flex';
 }
 
-// ====== 1. Consent Logic ======
+// ====== 1. Consent ======
 document.getElementById('agreeBtn').addEventListener('click', function() {
-    const nameVal = document.getElementById('participantName').value.trim();
-    if(!nameVal) { 
-        alert("시작하기 전에 성함을 입력해주세요. (Please enter your name before starting.)"); 
-        return; 
-    }
-    
-    localStorage.setItem(STORAGE_KEY_NAME, nameVal);
+    const name = document.getElementById('participantName').value.trim();
+    if(!name) { alert("이름을 입력해주세요."); return; }
+    localStorage.setItem(STORAGE_KEY_NAME, name);
     document.getElementById('consent').style.display = 'none';
     showStarterMenu();
 });
 
-// ====== 2. Start Experiment ======
+// ====== 2. Start ======
 document.getElementById('realStartBtn').addEventListener('click', function() {
-    const startSelect = document.getElementById('startSelect');
-    const selectedValue = startSelect.value;
+    const val = document.getElementById('startSelect').value;
+    let session, index, practice = false;
     
-    let session, videoIndex, doPracticeFirst;
-    
-    if (selectedValue === '0_0') {
+    if (val === '0_0') {
         session = 1;
-        videoIndex = 0;
-        doPracticeFirst = true;
+        index = 0;
+        practice = true;
     } else {
-        [session, videoIndex] = selectedValue.split('_').map(Number);
-        doPracticeFirst = false;
+        [session, index] = val.split('_').map(Number);
     }
     
     currentSession = session;
-    currentVideoIndexInSession = videoIndex;
-    isWaitingForNextSession = false;
-    
+    currentVideoIndexInSession = index;
     sessionStartTime = Date.now();
     localStorage.setItem(STORAGE_KEY_SESSION_START, sessionStartTime.toString());
-    
-    videoUploadedCount = 0;
-    
     localStorage.setItem(STORAGE_KEY_SESSION, currentSession.toString());
     
     document.getElementById('starter').style.display = 'none';
     document.getElementById('experiment').style.display = 'block';
     
-    initializeExperiment(currentSession, currentVideoIndexInSession, doPracticeFirst);
+    startExperiment(currentSession, currentVideoIndexInSession, practice);
 });
 
-// ====== 3. Experiment Logic ======
-function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
+// ====== 3. Experiment ======
+function startExperiment(session, startIndex, doPractice) {
     currentSession = session;
-    currentVideoIndexInSession = startVideoInSession;
-    isPracticeMode = doPracticeFirst;
-    isWaitingForNextSession = false;
+    currentVideoIndexInSession = startIndex;
+    isPracticeMode = doPractice;
     
     let evtCnt = 0;
     let fineTuning = false;
-    let isTransitioning = false;
+    let isUploading = false;
 
     const v = document.getElementById('v');
     const prompt = document.getElementById('prompt');
@@ -554,44 +351,53 @@ function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
     const evNumSpan = document.getElementById('evNum');
     const adjustHint = document.getElementById('adjustHint');
 
-    loadNext();
+    loadVideo();
 
-    function loadNext() {
-        isTransitioning = false;
-        
-        // Handle practice mode first
+    function loadVideo() {
         if (isPracticeMode) {
             isPracticeMode = false;
             v.src = 'practice.mp4';
-            prompt.innerHTML = `<span style="color:#4CAF50; font-weight:bold;">[연습 단계 Practice]</span><br><br>
-                                연습용 동영상입니다. 실제 실험 전에 조작 방법을 연습해보세요.<br>
-                                준비가 되면 아무 키나 눌러 시작하세요.`;
+            prompt.innerHTML = '<span style="color:#4CAF50;">[연습]</span><br>아무 키나 눌러 시작';
             v.style.display = 'none';
             prompt.style.display = 'block';
-            
             currentEvents = [];
             evtCnt = 0;
             counter.textContent = 'Events: 0';
             return;
         }
+        
+        // Check if session is complete
+        if (currentVideoIndexInSession >= 10) {
+            if (currentSession === 3) {
+                finishAll();
+                return;
+            }
+            // Move to next session
+            currentSession++;
+            currentVideoIndexInSession = 0;
+            localStorage.setItem(STORAGE_KEY_SESSION, currentSession.toString());
+            sessionStartTime = Date.now();
+            localStorage.setItem(STORAGE_KEY_SESSION_START, sessionStartTime.toString());
+            
+            prompt.innerHTML = `<span style="color:#4CAF50;">[Session ${currentSession-1} 완료]</span><br>
+                                Session ${currentSession}를 시작합니다.<br>
+                                아무 키나 눌러 시작`;
+            v.style.display = 'none';
+            prompt.style.display = 'block';
+            return;
+        }
 
-        // Save current progress
-        const progress = {
+        // Save progress
+        localStorage.setItem(STORAGE_KEY_PROGRESS, JSON.stringify({
             session: currentSession,
-            videoIndex: currentVideoIndexInSession,
-            timestamp: Date.now()
-        };
-        localStorage.setItem(STORAGE_KEY_PROGRESS, JSON.stringify(progress));
+            videoIndex: currentVideoIndexInSession
+        }));
 
-        // Get actual video number from session order
-        const actualVideoNumber = sessionVideos[currentSession][currentVideoIndexInSession];
+        // Load video
+        const videoNum = sessionVideos[currentSession][currentVideoIndexInSession];
+        v.src = `v${videoNum}.mp4`;
         
-        // Load the video
-        v.src = `v${actualVideoNumber}.mp4`;
-        
-        prompt.innerHTML = `세션 ${currentSession} - 영상 ${currentVideoIndexInSession + 1} / ${VIDEOS_PER_SESSION}<br>
-                            시작하려면 아무 키나 누르세요.`;
-        
+        prompt.innerHTML = `Session ${currentSession} - 영상 ${currentVideoIndexInSession + 1}/10<br>아무 키나 눌러 시작`;
         v.style.display = 'none';
         prompt.style.display = 'block';
         
@@ -601,63 +407,11 @@ function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
         fineTuning = false;
     }
 
-    async function completeCurrentSession() {
-        const sessionEndTime = Date.now();
-        const sessionStart = parseInt(localStorage.getItem(STORAGE_KEY_SESSION_START)) || sessionEndTime;
-        const sessionDuration = Math.round((sessionEndTime - sessionStart) / 1000);
-        
-        const allData = getGlobalData();
-        const sessionData = allData.filter(d => d.session === currentSession && d.vid !== 'practice');
-        
-        console.log(`Session ${currentSession} completed with ${sessionData.length} videos`);
-        
-        await uploadSessionSummary(currentSession, sessionData, sessionDuration);
-        
-        if (currentSession === 1) {
-            currentSession = 2;
-            currentVideoIndexInSession = 0;
-            localStorage.setItem(STORAGE_KEY_SESSION, '2');
-            localStorage.setItem(STORAGE_KEY_SESSION_START, Date.now().toString());
-            
-            prompt.innerHTML = `<span style="color:#4CAF50; font-weight:bold;">[Session 1 완료!]</span><br><br>
-                                세션 1 소요 시간: ${formatDuration(sessionDuration)}<br>
-                                ${sessionData.length}개 영상 완료<br><br>
-                                이제 Session 2를 시작합니다.<br>
-                                아무 키나 눌러 첫 번째 영상을 시작하세요.`;
-        } else if (currentSession === 2) {
-            currentSession = 3;
-            currentVideoIndexInSession = 0;
-            localStorage.setItem(STORAGE_KEY_SESSION, '3');
-            localStorage.setItem(STORAGE_KEY_SESSION_START, Date.now().toString());
-            
-            prompt.innerHTML = `<span style="color:#4CAF50; font-weight:bold;">[Session 2 완료!]</span><br><br>
-                                세션 2 소요 시간: ${formatDuration(sessionDuration)}<br>
-                                ${sessionData.length}개 영상 완료<br><br>
-                                이제 Session 3를 시작합니다.<br>
-                                아무 키나 눌러 첫 번째 영상을 시작하세요.`;
-        } else {
-            finishAll();
-            return;
-        }
-        
-        v.style.display = 'none';
-        prompt.style.display = 'block';
-        
-        // Set flag to wait for next session
-        isWaitingForNextSession = true;
-    }
-
-    function formatDuration(seconds) {
-        const mins = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        return `${mins}분 ${secs}초`;
-    }
-
     function pauseAndFineTune() {
         if (fineTuning) {
             fineTuning = false;
             adjustHint.style.display = 'none';
-            safePlay(v);
+            v.play().catch(e => console.log('Play interrupted'));
         } else {
             v.pause();
             fineTuning = true;
@@ -671,15 +425,10 @@ function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
         fineTuning = false;
         adjustHint.style.display = 'none';
         
-        let videoId;
-        if (v.src.includes('practice')) {
-            videoId = 'practice';
-        } else {
-            videoId = sessionVideos[currentSession][currentVideoIndexInSession];
-        }
+        const vid = v.src.includes('practice') ? 'practice' : sessionVideos[currentSession][currentVideoIndexInSession];
         
         currentEvents.push({
-            vid: videoId,
+            vid: vid,
             session: currentSession,
             ev: evtCnt + 1,
             time: v.currentTime,
@@ -695,75 +444,46 @@ function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
     }
 
     async function saveDesc() {
-        if(isTransitioning) return;
+        if (isUploading) return;
         
         const txt = descInput.value.trim();
-        if(txt === '') { 
-            alert('설명을 입력해주세요. (Please enter a description.)'); 
-            descInput.focus(); 
-            return; 
-        }
+        if (!txt) { alert('설명을 입력하세요'); descInput.focus(); return; }
         
-        const lastIdx = currentEvents.length - 1;
-        if(lastIdx >= 0) currentEvents[lastIdx].desc = txt;
-        
+        currentEvents[currentEvents.length - 1].desc = txt;
         descBox.style.display = 'none';
         
-        // Check if this was the last video of the session
-        const isLastVideoOfSession = (currentVideoIndexInSession === VIDEOS_PER_SESSION - 1);
-        
-        if(v.ended) {
-            isTransitioning = true;
+        if (v.ended) {
+            isUploading = true;
             
-            showUploadStatus('데이터 저장 중...');
-            
-            prompt.innerHTML = `<span style="color: #FF9800;">데이터 저장 중입니다...</span><br>잠시만 기다려주세요.`;
+            prompt.innerHTML = '데이터 저장 중...';
             prompt.style.display = 'block';
             v.style.display = 'none';
-
-            const videoId = currentEvents[0]?.vid || 'unknown';
             
-            const sessionStart = localStorage.getItem(STORAGE_KEY_SESSION_START);
-            const success = await saveAndUploadVideoWithRetry(
-                videoId, 
-                currentEvents, 
+            // Upload data
+            await uploadVideo(
+                currentEvents[0].vid,
+                currentEvents,
                 currentSession,
-                currentVideoIndexInSession,
-                sessionStart
+                currentVideoIndexInSession
             );
             
-            if (success) {
-                videoUploadedCount++;
-                showUploadStatus(`✅ 저장 완료! (${videoUploadedCount}/${VIDEOS_PER_SESSION})`);
-            } else {
-                showUploadStatus('❌ 저장 실패, 재시도 대기 중...', true);
-            }
+            isUploading = false;
             
             if (v.src.includes('practice')) {
                 currentSession = 1;
                 currentVideoIndexInSession = 0;
-                isWaitingForNextSession = false;
-                localStorage.setItem(STORAGE_KEY_SESSION_START, Date.now().toString());
-                loadNext();
+                loadVideo();
             } else {
-                if (isLastVideoOfSession) {
-                    // This was the last video, complete the session
-                    currentVideoIndexInSession++; // Increment to indicate we've moved past the last video
-                    await completeCurrentSession();
-                } else {
-                    // Move to next video
-                    currentVideoIndexInSession++; 
-                    loadNext();
-                }
+                currentVideoIndexInSession++;
+                loadVideo();
             }
         } else {
-            safePlay(v);
+            v.play().catch(e => console.log('Play interrupted'));
         }
     }
 
-    function cancelDescription() {
+    function cancelDesc() {
         descBox.style.display = 'none';
-        
         currentEvents.pop();
         evtCnt--;
         counter.textContent = 'Events: ' + Math.max(0, evtCnt);
@@ -771,38 +491,25 @@ function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
         if (v.src.includes('practice') && v.ended) {
             currentSession = 1;
             currentVideoIndexInSession = 0;
-            isWaitingForNextSession = false;
-            localStorage.setItem(STORAGE_KEY_SESSION_START, Date.now().toString());
-            loadNext();
+            loadVideo();
         } else {
-            prompt.innerHTML = '취소되었습니다.<br>계속하려면 아무 키나 누르세요.';
+            prompt.innerHTML = '취소됨<br>아무 키나 눌러 계속';
             prompt.style.display = 'block';
             v.style.display = 'none';
         }
     }
 
     async function finishAll() {
-        const finalSessionEnd = Date.now();
-        const sessionStart = parseInt(localStorage.getItem(STORAGE_KEY_SESSION_START)) || finalSessionEnd;
-        const sessionDuration = Math.round((finalSessionEnd - sessionStart) / 1000);
-        
-        const allData = getGlobalData();
-        const session3Data = allData.filter(d => d.session === 3 && d.vid !== 'practice');
-        await uploadSessionSummary(3, session3Data, sessionDuration);
-        
+        await uploadFinalSummary();
         document.getElementById('experiment').style.display = 'none';
         document.getElementById('completion').style.display = 'flex';
-        
-        await uploadFinalSummary();
-
         localStorage.removeItem(STORAGE_KEY_PROGRESS);
-        localStorage.removeItem(STORAGE_KEY_SESSION_START);
-
+        
         let timeLeft = 5;
         const timer = setInterval(() => {
             timeLeft--;
             document.getElementById('countdown').textContent = timeLeft;
-            if(timeLeft <= 0) {
+            if (timeLeft <= 0) {
                 clearInterval(timer);
                 document.getElementById('waitMsg').style.display = 'none';
                 document.getElementById('finalMsg').style.display = 'block';
@@ -810,208 +517,160 @@ function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
         }, 1000);
     }
 
+    // Event listeners
     document.getElementById('okBtn').onclick = saveDesc;
-    document.getElementById('cancelBtn').onclick = cancelDescription;
+    document.getElementById('cancelBtn').onclick = cancelDesc;
 
+    // Keyboard
     document.onkeydown = (e) => {
-        if(document.getElementById('experiment').style.display === 'none') return;
+        if (document.getElementById('experiment').style.display === 'none') return;
         
-        if(document.activeElement.id === 'descInput') {
-            if(e.code === 'Enter'){ e.preventDefault(); saveDesc(); }
-            if(e.code === 'Escape') { e.preventDefault(); cancelDescription(); }
+        if (document.activeElement.id === 'descInput') {
+            if (e.code === 'Enter') { e.preventDefault(); saveDesc(); }
+            if (e.code === 'Escape') { e.preventDefault(); cancelDesc(); }
             return;
         }
         
-        if(v.style.display === 'none' && prompt.style.display !== 'none' && e.target.tagName !== 'INPUT') {
-            if(isTransitioning) return;
+        if (v.style.display === 'none' && prompt.style.display !== 'none') {
+            if (isUploading) return;
+            prompt.style.display = 'none';
+            v.style.display = 'block';
             
-            prompt.style.display = 'none'; 
-            v.style.display = 'block'; 
-            
-            // If we're waiting for the next session, load the first video
-            if (isWaitingForNextSession) {
-                isWaitingForNextSession = false;
-                loadNext();
+            // If video source is empty or we're starting a new session, load video
+            if (!v.src || v.src === '') {
+                loadVideo();
             } else {
-                safePlay(v);
+                v.play().catch(e => console.log('Play interrupted'));
             }
             return;
         }
         
-        if(v.style.display !== 'none') {
-            if(e.code === 'Space'){ 
-                e.preventDefault(); 
-                pauseAndFineTune(); 
-                return; 
+        if (v.style.display !== 'none') {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                pauseAndFineTune();
+                return;
             }
             
-            if(fineTuning && v.paused) {
-                if(e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
+            if (fineTuning && v.paused) {
+                if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
                     e.preventDefault();
-                    v.currentTime = Math.max(0, v.currentTime + (e.code === 'ArrowLeft' ? -1 : 1));
+                    v.currentTime += e.code === 'ArrowLeft' ? -1 : 1;
+                    v.currentTime = Math.max(0, Math.min(v.duration, v.currentTime));
                     return;
                 }
-                if(e.code === 'Enter'){ 
-                    e.preventDefault(); 
-                    confirmEnd(); 
-                    return; 
+                if (e.code === 'Enter') {
+                    e.preventDefault();
+                    confirmEnd();
+                    return;
                 }
             }
         }
     };
 
     v.onended = () => {
-        const finalTime = v.duration; 
-        
-        let videoId;
-        if (v.src.includes('practice')) {
-            videoId = 'practice';
-        } else {
-            videoId = sessionVideos[currentSession][currentVideoIndexInSession];
-        }
+        const vid = v.src.includes('practice') ? 'practice' : sessionVideos[currentSession][currentVideoIndexInSession];
         
         currentEvents.push({
-            vid: videoId,
+            vid: vid,
             session: currentSession,
-            ev: evtCnt + 1, 
-            time: finalTime, 
+            ev: evtCnt + 1,
+            time: v.duration,
             desc: '[auto-end]'
         });
         
         evtCnt++;
         counter.textContent = 'Events: ' + evtCnt;
-        descInput.value = ''; 
+        descInput.value = '';
         evNumSpan.textContent = evtCnt;
-        descBox.style.display = 'block'; 
+        descBox.style.display = 'block';
         descInput.focus();
     };
 }
 
-// ====== 4. Upload Core (Netlify Forms) ======
+// ====== 4. Upload ======
 
+// Get all data
 function getGlobalData() {
     try {
-        const stored = localStorage.getItem(STORAGE_KEY_ALL_DATA);
-        return stored ? JSON.parse(stored) : [];
-    } catch (e) { 
-        return []; 
-    }
+        return JSON.parse(localStorage.getItem(STORAGE_KEY_ALL_DATA)) || [];
+    } catch { return []; }
 }
 
-function appendToDisk(newEvents) {
-    let all = getGlobalData();
-    all = all.concat(newEvents);
+// Append to disk
+function appendToDisk(events) {
+    const all = getGlobalData();
+    all.push(...events);
     localStorage.setItem(STORAGE_KEY_ALL_DATA, JSON.stringify(all));
 }
 
-async function saveAndUploadVideoWithRetry(videoId, events, session, positionInSession, sessionStartTime) {
-    const vStr = videoId.toString();
-    
+// Upload video
+async function uploadVideo(vid, events, session, position) {
     appendToDisk(events);
     
     const pid = getParticipantID();
-    const formData = new FormData();
-    formData.append('form-name', 'event-segmentation-kr');
-    formData.append('prolific_pid', pid);
-    formData.append('study_id', 'korean_exp_v8');
+    const fd = new FormData();
+    fd.append('form-name', 'event-segmentation-kr');
+    fd.append('prolific_pid', pid);
+    fd.append('study_id', 'korean_exp_v8');
     
-    const now = new Date().toISOString();
-    
-    if (videoId === 'practice') {
-        formData.append('session_id', `sess_${pid}_practice`);
-        formData.append('video_position_in_session', 'practice');
-        formData.append('video_position_display', 'practice');
-        formData.append('upload_type', 'practice_video');
+    if (vid === 'practice') {
+        fd.append('session_id', `sess_${pid}_practice`);
+        fd.append('video_position_in_session', 'practice');
+        fd.append('video_position_display', 'practice');
+        fd.append('upload_type', 'practice');
     } else {
-        formData.append('session_id', `sess_${pid}_session${session}`);
-        formData.append('video_position_in_session', (positionInSession + 1).toString());
-        formData.append('video_position_display', `${positionInSession + 1}/${VIDEOS_PER_SESSION}`);
-        formData.append('upload_type', 'main_video');
+        fd.append('session_id', `sess_${pid}_session${session}`);
+        fd.append('video_position_in_session', (position + 1).toString());
+        fd.append('video_position_display', `${position + 1}/10`);
+        fd.append('upload_type', 'main');
     }
     
-    formData.append('session_start_time', sessionStartTime || now);
-    formData.append('video_index', vStr);
-    formData.append('events', JSON.stringify(events));
-    formData.append('completion_time', now);
-    formData.append('bot-field', '');
-
-    const uploadData = {
-        videoId: vStr,
-        events,
-        session,
-        position: positionInSession,
-        sessionStart: sessionStartTime,
-        formData,
-        timestamp: Date.now()
-    };
+    fd.append('session_start_time', localStorage.getItem(STORAGE_KEY_SESSION_START) || new Date().toISOString());
+    fd.append('video_index', vid.toString());
+    fd.append('events', JSON.stringify(events));
+    fd.append('completion_time', new Date().toISOString());
+    fd.append('bot-field', '');
 
     try {
-        await performUpload(uploadData);
-        console.log(`✅ Uploaded video ${vStr} (Session ${session}, Position: ${positionInSession + 1}/${VIDEOS_PER_SESSION})`);
-        return true;
+        await fetch('/', { method: 'POST', body: fd });
+        showUploadStatus(`✅ 영상 ${vid} 저장 완료`);
     } catch (e) {
-        console.error(`❌ Upload failed for ${vStr}, adding to retry queue`);
-        addToFailedUploads(uploadData);
-        return false;
+        showUploadStatus(`❌ 저장 실패`, true);
+        console.error(e);
     }
 }
 
-async function uploadSessionSummary(sessionNum, sessionData, durationSeconds) {
-    const pid = getParticipantID();
-    const formData = new FormData();
-    formData.append('form-name', 'event-segmentation-kr');
-    formData.append('prolific_pid', pid);
-    formData.append('study_id', 'korean_exp_v8');
-    formData.append('session_id', `sess_${pid}_session${sessionNum}_summary`);
-    formData.append('upload_type', 'session_summary');
-    formData.append('session_number', sessionNum.toString());
-    formData.append('session_duration_seconds', durationSeconds.toString());
-    formData.append('session_duration_formatted', formatDuration(durationSeconds));
-    formData.append('videos_completed', sessionData.length.toString());
-    formData.append('total_videos_in_session', VIDEOS_PER_SESSION.toString());
-    formData.append('session_start_time', localStorage.getItem(STORAGE_KEY_SESSION_START) || new Date().toISOString());
-    formData.append('session_end_time', new Date().toISOString());
-    formData.append('events', JSON.stringify(sessionData));
-    formData.append('completion_time', new Date().toISOString());
-    formData.append('bot-field', '');
-
-    try {
-        await fetch('/', { method: 'POST', body: formData });
-        console.log(`✅ Uploaded Session ${sessionNum} summary (Duration: ${formatDuration(durationSeconds)}, Videos: ${sessionData.length})`);
-        showUploadStatus(`✅ Session ${sessionNum} 완료! 소요 시간: ${formatDuration(durationSeconds)}`);
-    } catch (e) {
-        console.error(`❌ Session summary upload failed for session ${sessionNum}`);
-        showUploadStatus(`❌ Session ${sessionNum} 요약 저장 실패`, true);
-    }
-}
-
-function formatDuration(seconds) {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}분 ${secs}초`;
-}
-
+// Upload final summary
 async function uploadFinalSummary() {
-    const allData = getGlobalData(); 
+    const all = getGlobalData();
     const pid = getParticipantID();
-
-    const formData = new FormData();
-    formData.append('form-name', 'event-segmentation-kr');
-    formData.append('prolific_pid', pid);
-    formData.append('study_id', 'korean_exp_v8');
-    formData.append('session_id', `sess_${pid}_final`);
-    formData.append('upload_type', 'final_summary');
-    formData.append('video_index', 'ALL_SUMMARY_BACKUP'); 
-    formData.append('events', JSON.stringify(allData));
-    formData.append('completion_time', new Date().toISOString());
-    formData.append('bot-field', '');
-
+    const fd = new FormData();
+    fd.append('form-name', 'event-segmentation-kr');
+    fd.append('prolific_pid', pid);
+    fd.append('study_id', 'korean_exp_v8');
+    fd.append('session_id', `sess_${pid}_final`);
+    fd.append('upload_type', 'final');
+    fd.append('video_index', 'ALL');
+    fd.append('events', JSON.stringify(all));
+    fd.append('completion_time', new Date().toISOString());
+    fd.append('bot-field', '');
+    
     try {
-        await fetch('/', { method: 'POST', body: formData });
-        console.log("✅ Final summary uploaded.");
+        await fetch('/', { method: 'POST', body: fd });
+        console.log('Final upload OK');
     } catch (e) {
-        console.error("❌ Final summary failed.");
+        console.error('Final upload failed', e);
     }
+}
+
+// Show status
+function showUploadStatus(msg, err = false) {
+    const el = document.getElementById('uploadStatus');
+    el.style.display = 'block';
+    el.style.color = err ? '#FF5252' : '#4CAF50';
+    el.textContent = msg;
+    setTimeout(() => el.style.display = 'none', 2000);
 }
 </script>
 </body>
