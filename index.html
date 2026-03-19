@@ -193,6 +193,8 @@ let isPracticeMode = false;
 let currentEvents = [];
 let sessionStartTime = null;
 let isWaitingForNextSession = false;
+// Store all events for the current session to ensure complete data
+let currentSessionEvents = [];
 
 // Auto-fill name on load
 window.addEventListener('DOMContentLoaded', () => {
@@ -345,6 +347,7 @@ document.getElementById('realStartBtn').addEventListener('click', function() {
     currentVideoIndexInSession = index;
     isPracticeMode = practice;
     isWaitingForNextSession = false;
+    currentSessionEvents = []; // Reset session events
     
     sessionStartTime = Date.now();
     localStorage.setItem(STORAGE_KEY_SESSION_START, sessionStartTime.toString());
@@ -427,12 +430,13 @@ function initializeExperiment() {
         const sessionStart = parseInt(localStorage.getItem(STORAGE_KEY_SESSION_START)) || sessionEndTime;
         const sessionDuration = Math.round((sessionEndTime - sessionStart) / 1000);
         
-        // Get session data
-        const allData = getGlobalData();
-        const sessionData = allData.filter(d => d.session === currentSession && d.vid !== 'practice');
+        // Get all data for this session from currentSessionEvents
+        // This includes all videos including the last one
+        console.log(`Session ${currentSession} completed with ${currentSessionEvents.length} videos`);
+        console.log('Session events:', currentSessionEvents);
         
         // Upload session summary
-        await uploadSessionSummary(currentSession, sessionData, sessionDuration);
+        await uploadSessionSummary(currentSession, currentSessionEvents, sessionDuration);
         
         // Update session
         currentSession++;
@@ -440,13 +444,16 @@ function initializeExperiment() {
         localStorage.setItem(STORAGE_KEY_SESSION, currentSession.toString());
         localStorage.setItem(STORAGE_KEY_SESSION_START, Date.now().toString());
         
+        // Reset session events for new session
+        currentSessionEvents = [];
+        
         // Set waiting flag
         isWaitingForNextSession = true;
         
         // Show completion message
         prompt.innerHTML = `<span style="color:#4CAF50;">[Session ${currentSession-1} 완료!]</span><br><br>
                             소요 시간: ${formatDuration(sessionDuration)}<br>
-                            ${sessionData.length}개 영상 완료<br><br>
+                            ${currentSessionEvents.length}개 영상 완료<br><br>
                             Session ${currentSession}를 시작하려면 아무 키나 누르세요.`;
         v.style.display = 'none';
         prompt.style.display = 'block';
@@ -513,6 +520,10 @@ function initializeExperiment() {
             prompt.style.display = 'block';
             v.style.display = 'none';
             
+            // Store events in currentSessionEvents before upload
+            // This ensures we have a complete record of the session
+            currentSessionEvents.push(...currentEvents);
+            
             // Upload video data
             const videoId = currentEvents[0]?.vid || 'unknown';
             const success = await uploadVideo(videoId, currentEvents, currentSession, currentVideoIndexInSession);
@@ -520,6 +531,7 @@ function initializeExperiment() {
             if (v.src.includes('practice')) {
                 currentSession = 1;
                 currentVideoIndexInSession = 0;
+                currentSessionEvents = []; // Reset session events
                 loadNext();
             } else {
                 currentVideoIndexInSession++;
@@ -539,6 +551,7 @@ function initializeExperiment() {
         if (v.src.includes('practice') && v.ended) {
             currentSession = 1;
             currentVideoIndexInSession = 0;
+            currentSessionEvents = []; // Reset session events
             loadNext();
         } else {
             prompt.innerHTML = '취소되었습니다.<br>계속하려면 아무 키나 누르세요.';
@@ -553,9 +566,9 @@ function initializeExperiment() {
         const sessionStart = parseInt(localStorage.getItem(STORAGE_KEY_SESSION_START)) || sessionEndTime;
         const sessionDuration = Math.round((sessionEndTime - sessionStart) / 1000);
         
-        const allData = getGlobalData();
-        const session3Data = allData.filter(d => d.session === 3 && d.vid !== 'practice');
-        await uploadSessionSummary(3, session3Data, sessionDuration);
+        // Make sure Session 3 events are included
+        console.log(`Session 3 completed with ${currentSessionEvents.length} videos`);
+        await uploadSessionSummary(3, currentSessionEvents, sessionDuration);
         
         document.getElementById('experiment').style.display = 'none';
         document.getElementById('completion').style.display = 'flex';
@@ -733,6 +746,7 @@ async function uploadSessionSummary(sessionNum, sessionData, durationSeconds) {
     try {
         await fetch('/', { method: 'POST', body: formData });
         showUploadStatus(`✅ Session ${sessionNum} 완료! (${formatDuration(durationSeconds)})`);
+        console.log(`Session ${sessionNum} summary uploaded with ${sessionData.length} videos`);
     } catch (e) {
         console.error(`Session summary upload failed:`, e);
     }
