@@ -130,8 +130,8 @@
 </div>
 
 <!-- Netlify Form (HIDDEN) - Korean Version -->
-<form id="netlify-data-form" style="display: none;" netlify netlify-honeypot="bot-field" name="event-segmentation-data">
-  <input type="hidden" name="form-name" value="event-segmentation-data"> 
+<form id="netlify-data-form" style="display: none;" netlify netlify-honeypot="bot-field" name="event-segmentation-kr">
+  <input type="hidden" name="form-name" value="event-segmentation-kr"> 
   <input type="hidden" name="prolific_pid">
   <input type="hidden" name="study_id">
   <input type="hidden" name="session_id">
@@ -746,7 +746,7 @@ async function saveAndUploadVideo(videoId, events, session) {
     // Prepare Netlify form data
     const pid = getParticipantID();
     const formData = new FormData();
-    formData.append('form-name', 'event-segmentation-data');
+    formData.append('form-name', 'event-segmentation-kr');
     formData.append('prolific_pid', pid);
     formData.append('study_id', 'korean_exp_v8');
     
