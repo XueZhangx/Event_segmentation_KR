@@ -192,7 +192,7 @@ let currentVideoIndexInSession = 0;
 let isPracticeMode = false;
 let currentEvents = [];
 let sessionStartTime = null;
-let isSessionComplete = false;  // Flag to indicate session is complete, waiting for next session
+let isWaitingForNextSession = false;
 
 // Auto-fill name on load
 window.addEventListener('DOMContentLoaded', () => {
@@ -343,7 +343,8 @@ document.getElementById('realStartBtn').addEventListener('click', function() {
     
     currentSession = session;
     currentVideoIndexInSession = index;
-    isSessionComplete = false;
+    isPracticeMode = practice;
+    isWaitingForNextSession = false;
     
     sessionStartTime = Date.now();
     localStorage.setItem(STORAGE_KEY_SESSION_START, sessionStartTime.toString());
@@ -352,16 +353,11 @@ document.getElementById('realStartBtn').addEventListener('click', function() {
     document.getElementById('starter').style.display = 'none';
     document.getElementById('experiment').style.display = 'block';
     
-    initializeExperiment(currentSession, currentVideoIndexInSession, practice);
+    initializeExperiment();
 });
 
 // ====== 3. Experiment ======
-function initializeExperiment(session, startIndex, doPractice) {
-    currentSession = session;
-    currentVideoIndexInSession = startIndex;
-    isPracticeMode = doPractice;
-    isSessionComplete = false;
-    
+function initializeExperiment() {
     let evtCnt = 0;
     let fineTuning = false;
     let isTransitioning = false;
@@ -443,6 +439,9 @@ function initializeExperiment(session, startIndex, doPractice) {
         currentVideoIndexInSession = 0;
         localStorage.setItem(STORAGE_KEY_SESSION, currentSession.toString());
         localStorage.setItem(STORAGE_KEY_SESSION_START, Date.now().toString());
+        
+        // Set waiting flag
+        isWaitingForNextSession = true;
         
         // Show completion message
         prompt.innerHTML = `<span style="color:#4CAF50;">[Session ${currentSession-1} 완료!]</span><br><br>
@@ -597,12 +596,19 @@ function initializeExperiment(session, startIndex, doPractice) {
             prompt.style.display = 'none';
             v.style.display = 'block';
             
-            // Always load the current video based on currentSession and currentVideoIndexInSession
-            if (currentVideoIndexInSession < VIDEOS_PER_SESSION) {
-                const videoNum = sessionVideos[currentSession][currentVideoIndexInSession];
-                v.src = `v${videoNum}.mp4`;
+            // If we're waiting for next session, load the first video
+            if (isWaitingForNextSession) {
+                isWaitingForNextSession = false;
+                loadNext();
+            } else {
+                // Always use loadNext to ensure correct video is loaded
+                // This handles practice mode and regular videos
+                if (!v.src || v.src === '') {
+                    loadNext();
+                } else {
+                    v.play().catch(e => console.log('Play interrupted'));
+                }
             }
-            v.play().catch(e => console.log('Play interrupted'));
             return;
         }
         
