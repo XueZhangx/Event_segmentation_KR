@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Event Segmentation Study (Korean) - v8</title>
+<style>
+  body{margin:0;background:#000;color:#fff;font-family:'Malgun Gothic', 'Apple SD Gothic Neo', Arial, sans-serif;overflow:hidden}
+  #videoBox{width:100vw;height:100vh;display:flex;align-items:center;justify-content:center}
+  video {
+    width: 96%;
+    max-height: 96%;
+    pointer-events: none !important;
+    user-select: none !important;
+    cursor: default !important;
+  }
+  
+  /* Prompt & Counter */
+  #prompt{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);font-size:26px;text-align:center;line-height: 1.5; display:none;}
+  #counter{position:fixed;top:20px;right:20px;font-size:24px}
+  #help{position:fixed;bottom:20px;left:20px;font-size:14px;color:#ccc}
+  #adjustHint{position:fixed;bottom:60px;left:20px;font-size:14px;color:#ccc;display:none}
+  
+  /* Description Box */
+  #descBox{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#222;padding:20px 30px;border-radius:8px;display:none;z-index:1000;}
+  #descBox input{width:350px;font-size:18px;padding:6px 10px}
+  #descBox button{margin-left:10px;padding:6px 12px;font-size:16px;cursor: pointer;}
+  
+  /* Consent Overlay */
+  #consent{position:fixed;top:0;left:0;width:100vw;height:100vh;background:#000;z-index:2000;display:flex;align-items:center;justify-content:center; overflow-y: auto;}
+  
+  /* Completion Overlay */
+  #completion{position:fixed;top:0;left:0;width:100vw;height:100vh;background:#000;z-index:2000;display:none;flex-direction:column;align-items:center;justify-content:center;}
+  
+  /* Starter Menu */
+  #starter {
+      position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+      background: #111; z-index: 1500;
+      display: none;
+      flex-direction: column; align-items: center; justify-content: center;
+  }
+  #starter select { padding: 10px; font-size: 16px; margin: 10px 0; border-radius: 5px; min-width: 350px; }
+  #starter button { padding: 10px 20px; font-size: 18px; background: #2196F3; color: white; border: none; border-radius: 5px; cursor: pointer; }
+
+  .input-group { margin: 20px 0; }
+  .input-group label { display: block; margin-bottom: 8px; font-weight: bold; }
+  .input-group input { padding: 10px; width: 100%; box-sizing: border-box; font-size: 16px; }
+  
+  /* Countdown Styles */
+  .wait-warning { color: #FF9800; font-size: 20px; margin-bottom: 20px; font-weight: bold;}
+  .success-msg { color: #4CAF50; font-size: 20px; margin-bottom: 20px; display: none; }
+</style>
+</head>
+<body>
+
+<!-- 1. Consent Form (Korean) -->
+<div id="consent">
+  <div style="max-width: 800px; margin: 50px auto; padding: 30px; background: #222; border-radius: 10px; border: 1px solid #444;">
+    <h2>이벤트 분할 연구 (Event Segmentation Study)</h2>
+    <p>본 실험에 참여하기 전, 아래 내용을 주의 깊게 읽어주세요:</p>
+    <ul>
+      <li><strong>과제:</strong> 동영상을 시청하며 사건의 경계를 구분합니다.</li>
+      <li><strong>역할:</strong> 의미 있는 사건 단위가 끝나거나 새로운 사건이 시작될 때마다 스페이스바를 누르고, 해당 사건에 대한 간단한 설명을 작성합니다.</li>
+      <li><strong>구성:</strong> 연습 영상(1개) + 본 실험 영상(30개, 3개 세션으로 나뉨, 각 세션당 10개 영상)</li>
+    </ul>
+
+    <div style="background:#333;padding:15px;border-radius:5px;margin:20px 0;">
+      <h3 style="margin-top:0;">조작 방법 (How to Mark Events):</h3>
+      <ul style="margin-bottom:0; line-height: 1.6;">
+        <li><strong>스페이스바 (SPACEBAR)</strong> - 의미 있는 사건 단위가 끝났거나 새로운 사건이 시작된다고 생각될 때 누릅니다 (다시 누르면 계속 재생됩니다)</li>
+        <li><strong>← → 방향키</strong> - 시간 미세 조정 (±1초)</li>
+        <li><strong>엔터 (ENTER)</strong> - 시간 확정; <strong>설명 입력 후 엔터를 눌러 제출</strong></li>
+        <li><strong>ESC</strong> - 표시 취소 또는 입력 취소</li>
+      </ul>
+    </div>
+
+    <div class="input-group">
+        <label for="participantName" style="color: #4CAF50;">성함 (Name):</label>
+        <input type="text" id="participantName" placeholder="성함을 입력해주세요 (Enter your name)">
+    </div>
+
+    <p>아래 버튼을 클릭하면 위 내용을 이해했으며 실험 참여에 동의하는 것으로 간주합니다.</p>
+    <button id="agreeBtn" style="padding: 12px 25px; font-size: 18px; background:#4CAF50; color:white; border:none;border-radius:5px;cursor:pointer;">동의 및 시작 (Confirm & Start)</button>
+  </div>
+</div>
+
+<!-- 2. Starter Menu (Korean) -->
+<div id="starter">
+    <h2>시작 구간 선택 (Select Start Point)</h2>
+    <p style="color:#ccc;">새로고침을 하셨거나 중단된 경우, 아래에서 시작할 위치를 선택하세요.</p>
+    <label>
+        시작 위치 (Start from):
+        <select id="startSelect"></select>
+    </label>
+    <br>
+    <button id="realStartBtn">실험 시작 (Start Experiment)</button>
+</div>
+
+<!-- 3. Experiment Interface (Korean) -->
+<div id="experiment" style="display: none;">
+  <div id="prompt">로딩 중... (Loading)</div>
+  <div id="counter">Events: 0</div>
+  <div id="videoBox">
+    <video id="v" controls style="display:none;"></video>
+  </div>
+  <div id="help">Space=경계 표시 (사건 종료/시작)&nbsp;&nbsp; Enter=확정/제출&nbsp;&nbsp; ESC=취소</div>
+  <div id="adjustHint">← → 조정 (Space=재생) (Enter=확정)</div>
+  <div id="descBox">
+    <label>사건 <span id="evNum"></span>에 대한 간단한 설명:<br>
+      <input id="descInput" type="text" placeholder="예: 주인공이 방을 나간다">
+    </label>
+    <div style="margin-top: 10px;">
+      <button id="okBtn">제출 (Submit)</button>
+      <button id="cancelBtn" style="margin-left: 10px; background: #666; color:white;">취소 (Cancel)</button>
+    </div>
+    <div style="font-size: 12px; color: #999; margin-top: 5px;">
+        엔터(Enter)를 눌러 제출 / ESC를 눌러 취소
+    </div>
+  </div>
+</div>
+
+<!-- 4. Completion Screen (Korean) -->
+<div id="completion">
+  <h2>참여해 주셔서 감사합니다!</h2>
+  <div id="waitMsg" class="wait-warning">
+      데이터 동기화 중입니다. 창을 닫지 말고 잠시만 기다려주세요... <span id="countdown" style="font-size: 24px; color: white;">5</span>
+  </div>
+  <div id="finalMsg" class="success-msg">
+      ✅ 데이터가 성공적으로 저장되었습니다. 이제 창을 닫으셔도 됩니다.
+  </div>
+</div>
+
+<!-- Netlify Form (HIDDEN) - Korean Version -->
+<form id="netlify-data-form" style="display: none;" netlify netlify-honeypot="bot-field" name="event-segmentation-data">
+  <input type="hidden" name="form-name" value="event-segmentation-data"> 
+  <input type="hidden" name="prolific_pid">
+  <input type="hidden" name="study_id">
+  <input type="hidden" name="session_id">
+  <input type="hidden" name="video_index">
+  <input type="hidden" name="events">
+  <input type="hidden" name="completion_time">
+  <input type="text" name="bot-field" style="display: none;">
+</form>
+
+<script>
+// ====== Configuration ======
+const TOTAL_VIDEOS = 30;                    // Total number of experiment videos (14 music + 16 dialogues)
+const VIDEOS_PER_SESSION = 10;              // Videos per session (3 sessions total)
+const TOTAL_SESSIONS = 3;                    // Number of sessions
+
+const STORAGE_KEY_PROGRESS = 'seeg_kor_v8_progress';    // Progress storage key
+const STORAGE_KEY_NAME = 'seeg_kor_v8_name';            // Participant name storage key
+const STORAGE_KEY_ALL_DATA = 'seeg_kor_v8_alldata';     // Complete data backup key
+const STORAGE_KEY_SESSION = 'seeg_kor_v8_session';      // Current session key
+const STORAGE_KEY_VIDEO_ORDER = 'seeg_kor_v8_order';    // Randomized video order key
+
+// Video category definitions (1-14: music, 15-30: dialogues)
+const VIDEO_CATEGORIES = {
+    // Music videos (1-14)
+    1: 'music', 2: 'music', 3: 'music', 4: 'music', 5: 'music',
+    6: 'music', 7: 'music', 8: 'music', 9: 'music', 10: 'music',
+    11: 'music', 12: 'music', 13: 'music', 14: 'music',
+    
+    // Dialogue videos (15-30)
+    15: 'dialogues', 16: 'dialogues', 17: 'dialogues', 18: 'dialogues', 19: 'dialogues',
+    20: 'dialogues', 21: 'dialogues', 22: 'dialogues', 23: 'dialogues', 24: 'dialogues',
+    25: 'dialogues', 26: 'dialogues', 27: 'dialogues', 28: 'dialogues', 29: 'dialogues',
+    30: 'dialogues'
+};
+
+// Global state variables
+let currentSession = 1;                      // Current session (1, 2, or 3)
+let videoOrder = [];                         // Randomized video order [v1, v2, ..., v30]
+let sessionVideos = {                         // Videos in each session
+    1: [],  // 10 random videos
+    2: [],  // 10 random videos
+    3: []   // 10 random videos
+};
+let currentVideoIndexInSession = 0;           // Current video position within session
+let isPracticeMode = false;                   // Whether currently in practice mode
+let currentEvents = [];                       // Events for current video
+
+// Auto-fill name on load
+window.addEventListener('DOMContentLoaded', () => {
+    const savedName = localStorage.getItem(STORAGE_KEY_NAME);
+    if(savedName) {
+        document.getElementById('participantName').value = savedName;
+    }
+    
+    // Check for unfinished experiment
+    const savedProgress = localStorage.getItem(STORAGE_KEY_PROGRESS);
+    
+    if (savedProgress) {
+        // Optional: Ask if user wants to continue
+        setTimeout(() => {
+            if (confirm('이전에 진행하던 실험이 있습니다. 계속하시겠습니까? (You have an unfinished experiment. Continue?)')) {
+                document.getElementById('agreeBtn').click();
+            }
+        }, 500);
+    }
+});
+
+/**
+ * Get participant ID from input or localStorage
+ */
+function getParticipantID() {
+    let name = document.getElementById('participantName').value.trim();
+    if(!name) name = localStorage.getItem(STORAGE_KEY_NAME) || "Unknown_User";
+    return name;
+}
+
+/**
+ * Fisher-Yates shuffle algorithm
+ */
+function shuffleArray(array) {
+    const newArray = [...array];
+    for (let i = newArray.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+    }
+    return newArray;
+}
+
+/**
+ * Initialize randomization for videos and sessions
+ * All 30 videos are randomly shuffled and then split into three sessions
+ */
+function initializeRandomization() {
+    // Check if we have saved order
+    const savedOrder = localStorage.getItem(STORAGE_KEY_VIDEO_ORDER);
+    const savedSession = localStorage.getItem(STORAGE_KEY_SESSION);
+    
+    if (savedOrder && savedSession) {
+        // Restore previous state
+        videoOrder = JSON.parse(savedOrder);
+        currentSession = parseInt(savedSession);
+        
+        // Rebuild sessionVideos from saved order
+        sessionVideos[1] = videoOrder.slice(0, 10);
+        sessionVideos[2] = videoOrder.slice(10, 20);
+        sessionVideos[3] = videoOrder.slice(20, 30);
+    } else {
+        // Create new random order - shuffle all 30 videos
+        const allVideos = Array.from({length: TOTAL_VIDEOS}, (_, i) => i + 1);
+        videoOrder = shuffleArray(allVideos);
+        
+        // Split into three sessions
+        sessionVideos[1] = videoOrder.slice(0, 10);
+        sessionVideos[2] = videoOrder.slice(10, 20);
+        sessionVideos[3] = videoOrder.slice(20, 30);
+        
+        // Save to localStorage
+        localStorage.setItem(STORAGE_KEY_VIDEO_ORDER, JSON.stringify(videoOrder));
+        localStorage.setItem(STORAGE_KEY_SESSION, '1');
+        
+        currentSession = 1;
+    }
+}
+
+/**
+ * Show starter menu with clear options
+ */
+function showStarterMenu() {
+    const starter = document.getElementById('starter');
+    const startSelect = document.getElementById('startSelect');
+    
+    // Initialize randomization
+    initializeRandomization();
+    
+    // Get current progress
+    const savedProgress = localStorage.getItem(STORAGE_KEY_PROGRESS);
+    
+    // Populate start select
+    startSelect.innerHTML = '';
+    
+    // Option 0: Start from beginning (with practice) - DEFAULT
+    const opt0 = document.createElement('option');
+    opt0.value = '0_0';
+    opt0.textContent = "0. 처음부터 시작 (연습 영상 포함) - Start from beginning (with practice)";
+    if (!savedProgress) {
+        opt0.selected = true;
+    }
+    startSelect.appendChild(opt0);
+    
+    // Add separator
+    const separator = document.createElement('option');
+    separator.disabled = true;
+    separator.textContent = "──────────────────";
+    startSelect.appendChild(separator);
+    
+    // Session 1 videos
+    for(let i = 0; i < VIDEOS_PER_SESSION; i++) {
+        const opt = document.createElement('option');
+        opt.value = `1_${i}`;
+        opt.textContent = `Session 1 - 영상 ${i+1}`;
+        
+        if (savedProgress) {
+            const progress = JSON.parse(savedProgress);
+            if (progress.session === 1 && progress.videoIndex === i) {
+                opt.selected = true;
+            }
+        }
+        startSelect.appendChild(opt);
+    }
+    
+    // Add separator
+    const separator2 = document.createElement('option');
+    separator2.disabled = true;
+    separator2.textContent = "──────────────────";
+    startSelect.appendChild(separator2);
+    
+    // Session 2 videos
+    for(let i = 0; i < VIDEOS_PER_SESSION; i++) {
+        const opt = document.createElement('option');
+        opt.value = `2_${i}`;
+        opt.textContent = `Session 2 - 영상 ${i+1}`;
+        
+        if (savedProgress) {
+            const progress = JSON.parse(savedProgress);
+            if (progress.session === 2 && progress.videoIndex === i) {
+                opt.selected = true;
+            }
+        }
+        startSelect.appendChild(opt);
+    }
+    
+    // Add separator
+    const separator3 = document.createElement('option');
+    separator3.disabled = true;
+    separator3.textContent = "──────────────────";
+    startSelect.appendChild(separator3);
+    
+    // Session 3 videos
+    for(let i = 0; i < VIDEOS_PER_SESSION; i++) {
+        const opt = document.createElement('option');
+        opt.value = `3_${i}`;
+        opt.textContent = `Session 3 - 영상 ${i+1}`;
+        
+        if (savedProgress) {
+            const progress = JSON.parse(savedProgress);
+            if (progress.session === 3 && progress.videoIndex === i) {
+                opt.selected = true;
+            }
+        }
+        startSelect.appendChild(opt);
+    }
+    
+    starter.style.display = 'flex';
+}
+
+// ====== 1. Consent Logic ======
+document.getElementById('agreeBtn').addEventListener('click', function() {
+    const nameVal = document.getElementById('participantName').value.trim();
+    if(!nameVal) { 
+        alert("시작하기 전에 성함을 입력해주세요. (Please enter your name before starting.)"); 
+        return; 
+    }
+    
+    localStorage.setItem(STORAGE_KEY_NAME, nameVal);
+    document.getElementById('consent').style.display = 'none';
+    showStarterMenu();
+});
+
+// ====== 2. Start Experiment ======
+document.getElementById('realStartBtn').addEventListener('click', function() {
+    const startSelect = document.getElementById('startSelect');
+    const selectedValue = startSelect.value;
+    
+    let session, videoIndex, doPracticeFirst;
+    
+    if (selectedValue === '0_0') {
+        // Start from beginning with practice
+        session = 1;
+        videoIndex = 0;
+        doPracticeFirst = true;
+    } else {
+        // Start from specific session and video
+        [session, videoIndex] = selectedValue.split('_').map(Number);
+        doPracticeFirst = false;
+    }
+    
+    currentSession = session;
+    currentVideoIndexInSession = videoIndex;
+    
+    // Save current session
+    localStorage.setItem(STORAGE_KEY_SESSION, currentSession.toString());
+    
+    document.getElementById('starter').style.display = 'none';
+    document.getElementById('experiment').style.display = 'block';
+    
+    initializeExperiment(currentSession, currentVideoIndexInSession, doPracticeFirst);
+});
+
+// ====== 3. Experiment Logic ======
+function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
+    currentSession = session;
+    currentVideoIndexInSession = startVideoInSession;
+    isPracticeMode = doPracticeFirst;
+    
+    let evtCnt = 0;                          // Event counter for current video
+    let fineTuning = false;                   // Fine-tuning mode flag
+    let isTransitioning = false;               // Transition between videos flag
+
+    const v = document.getElementById('v');
+    const prompt = document.getElementById('prompt');
+    const counter = document.getElementById('counter');
+    const descBox = document.getElementById('descBox');
+    const descInput = document.getElementById('descInput');
+    const evNumSpan = document.getElementById('evNum');
+    const adjustHint = document.getElementById('adjustHint');
+
+    // Load first video
+    loadNext();
+
+    /**
+     * Load the next video in sequence
+     */
+    function loadNext() {
+        isTransitioning = false;
+        
+        // Handle practice mode first
+        if (isPracticeMode) {
+            isPracticeMode = false;  // Clear flag after loading practice
+            v.src = 'practice.mp4';
+            prompt.innerHTML = `<span style="color:#4CAF50; font-weight:bold;">[연습 단계 Practice]</span><br><br>
+                                연습용 동영상입니다. 실제 실험 전에 조작 방법을 연습해보세요.<br>
+                                준비가 되면 아무 키나 눌러 시작하세요.`;
+            v.style.display = 'none';
+            prompt.style.display = 'block';
+            
+            currentEvents = [];
+            evtCnt = 0;
+            counter.textContent = 'Events: 0';
+            return;
+        }
+        
+        // Check if current session is complete
+        if (currentVideoIndexInSession >= VIDEOS_PER_SESSION) {
+            if (currentSession === 1) {
+                // Session 1 complete, move to Session 2
+                currentSession = 2;
+                currentVideoIndexInSession = 0;
+                localStorage.setItem(STORAGE_KEY_SESSION, '2');
+                
+                prompt.innerHTML = `<span style="color:#4CAF50; font-weight:bold;">[Session 1 완료!]</span><br><br>
+                                    이제 Session 2를 시작합니다.<br><br>
+                                    준비가 되면 아무 키나 눌러주세요.`;
+                v.style.display = 'none';
+                prompt.style.display = 'block';
+                return;
+            } else if (currentSession === 2) {
+                // Session 2 complete, move to Session 3
+                currentSession = 3;
+                currentVideoIndexInSession = 0;
+                localStorage.setItem(STORAGE_KEY_SESSION, '3');
+                
+                prompt.innerHTML = `<span style="color:#4CAF50; font-weight:bold;">[Session 2 완료!]</span><br><br>
+                                    이제 Session 3를 시작합니다.<br><br>
+                                    준비가 되면 아무 키나 눌러주세요.`;
+                v.style.display = 'none';
+                prompt.style.display = 'block';
+                return;
+            } else {
+                // All sessions complete (Session 3 finished)
+                finishAll();
+                return;
+            }
+        }
+
+        // Save current progress
+        const progress = {
+            session: currentSession,
+            videoIndex: currentVideoIndexInSession,
+            timestamp: Date.now()
+        };
+        localStorage.setItem(STORAGE_KEY_PROGRESS, JSON.stringify(progress));
+
+        // Get actual video number from session order
+        const actualVideoNumber = sessionVideos[currentSession][currentVideoIndexInSession];
+        
+        // Load the video
+        v.src = `v${actualVideoNumber}.mp4`;  // Video files: v1.mp4 to v30.mp4
+        
+        prompt.innerHTML = `세션 ${currentSession} - 영상 ${currentVideoIndexInSession + 1} / ${VIDEOS_PER_SESSION}<br>
+                            시작하려면 아무 키나 누르세요.`;
+        
+        v.style.display = 'none';
+        prompt.style.display = 'block';
+        
+        currentEvents = [];
+        evtCnt = 0;
+        counter.textContent = 'Events: 0';
+        fineTuning = false;
+    }
+
+    /**
+     * Pause video and enter fine-tuning mode
+     */
+    function pauseAndFineTune() {
+        if(v.paused && fineTuning) {
+            fineTuning = false;
+            adjustHint.style.display = 'none';
+            v.play();
+            return;
+        }
+        v.pause();
+        fineTuning = true;
+        adjustHint.style.display = 'block';
+    }
+
+    /**
+     * Confirm event time and proceed to description
+     */
+    function confirmEnd() {
+        fineTuning = false;
+        adjustHint.style.display = 'none';
+        
+        // Determine video ID (practice or number)
+        let videoId;
+        if (v.src.includes('practice')) {
+            videoId = 'practice';
+        } else {
+            videoId = sessionVideos[currentSession][currentVideoIndexInSession];
+        }
+        
+        currentEvents.push({
+            vid: videoId,
+            session: currentSession,
+            ev: evtCnt + 1,
+            time: v.currentTime,
+            desc: ''
+        });
+        
+        evtCnt++;
+        counter.textContent = 'Events: ' + evtCnt;
+        descInput.value = '';
+        evNumSpan.textContent = evtCnt;
+        descBox.style.display = 'block';
+        descInput.focus();
+    }
+
+    /**
+     * Save description and proceed
+     */
+    async function saveDesc() {
+        if(isTransitioning) return;
+        
+        const txt = descInput.value.trim();
+        if(txt === '') { 
+            alert('설명을 입력해주세요. (Please enter a description.)'); 
+            descInput.focus(); 
+            return; 
+        }
+        
+        // Update the last event's description
+        const lastIdx = currentEvents.length - 1;
+        if(lastIdx >= 0) currentEvents[lastIdx].desc = txt;
+        
+        descBox.style.display = 'none';
+        
+        if(v.ended) {
+            isTransitioning = true;
+            
+            prompt.innerHTML = `<span style="color: #FF9800;">데이터 저장 중입니다...</span><br>잠시만 기다려주세요.`;
+            prompt.style.display = 'block';
+            v.style.display = 'none';
+
+            // Get video ID for upload
+            const videoId = currentEvents[0]?.vid || 'unknown';
+            
+            // Upload video data
+            await saveAndUploadVideo(videoId, currentEvents, currentSession);
+            
+            if (v.src.includes('practice')) {
+                // Practice video ended, move to first real video
+                currentSession = 1;
+                currentVideoIndexInSession = 0;
+                loadNext();
+            } else {
+                // Move to next video
+                currentVideoIndexInSession++; 
+                loadNext();
+            }
+        } else {
+            v.play();
+        }
+    }
+
+    /**
+     * Cancel description entry
+     */
+    function cancelDescription() {
+        descBox.style.display = 'none';
+        
+        // Remove the last event
+        currentEvents.pop();
+        evtCnt--;
+        counter.textContent = 'Events: ' + Math.max(0, evtCnt);
+        
+        if (v.src.includes('practice') && v.ended) {
+            // Practice video ended and cancelled, move to first real video
+            currentSession = 1;
+            currentVideoIndexInSession = 0;
+            loadNext();
+        } else {
+            prompt.innerHTML = '취소되었습니다.<br>계속하려면 아무 키나 누르세요.';
+            prompt.style.display = 'block';
+            v.style.display = 'none';
+        }
+    }
+
+    /**
+     * Complete all sessions
+     */
+    async function finishAll() {
+        document.getElementById('experiment').style.display = 'none';
+        document.getElementById('completion').style.display = 'flex';
+        
+        // Final upload of all data
+        await uploadFinalSummary();
+
+        // Clear progress
+        localStorage.removeItem(STORAGE_KEY_PROGRESS);
+        // Keep video order and session info for potential recovery
+
+        // Countdown timer
+        let timeLeft = 5;
+        const timer = setInterval(() => {
+            timeLeft--;
+            document.getElementById('countdown').textContent = timeLeft;
+            if(timeLeft <= 0) {
+                clearInterval(timer);
+                document.getElementById('waitMsg').style.display = 'none';
+                document.getElementById('finalMsg').style.display = 'block';
+            }
+        }, 1000);
+    }
+
+    // Event listeners
+    document.getElementById('okBtn').onclick = saveDesc;
+    document.getElementById('cancelBtn').onclick = cancelDescription;
+
+    // Keyboard controls
+    document.onkeydown = (e) => {
+        if(document.getElementById('experiment').style.display === 'none') return;
+        
+        // Handle input field separately
+        if(document.activeElement.id === 'descInput') {
+            if(e.code === 'Enter'){ e.preventDefault(); saveDesc(); }
+            if(e.code === 'Escape') { e.preventDefault(); cancelDescription(); }
+            return;
+        }
+        
+        // Start video when any key pressed on prompt screen
+        if(v.style.display === 'none' && prompt.style.display !== 'none' && e.target.tagName !== 'INPUT') {
+            if(isTransitioning) return; // Block during upload
+            prompt.style.display = 'none'; 
+            v.style.display = 'block'; 
+            v.play(); 
+            return;
+        }
+        
+        // Video controls
+        if(v.style.display !== 'none') {
+            if(e.code === 'Space'){ 
+                e.preventDefault(); 
+                pauseAndFineTune(); 
+                return; 
+            }
+            
+            if(fineTuning && v.paused) {
+                if(e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
+                    e.preventDefault();
+                    v.currentTime = Math.max(0, v.currentTime + (e.code === 'ArrowLeft' ? -1 : 1));
+                    return;
+                }
+                if(e.code === 'Enter'){ 
+                    e.preventDefault(); 
+                    confirmEnd(); 
+                    return; 
+                }
+            }
+        }
+    };
+
+    // Video ended event
+    v.onended = () => {
+        const finalTime = v.duration; 
+        
+        // Determine video ID (practice or number)
+        let videoId;
+        if (v.src.includes('practice')) {
+            videoId = 'practice';
+        } else {
+            videoId = sessionVideos[currentSession][currentVideoIndexInSession];
+        }
+        
+        currentEvents.push({
+            vid: videoId,
+            session: currentSession,
+            ev: evtCnt + 1, 
+            time: finalTime, 
+            desc: '[auto-end]'
+        });
+        
+        evtCnt++;
+        counter.textContent = 'Events: ' + evtCnt;
+        descInput.value = ''; 
+        evNumSpan.textContent = evtCnt;
+        descBox.style.display = 'block'; 
+        descInput.focus();
+    };
+}
+
+// ====== 4. Upload Core (Netlify Forms) ======
+
+/**
+ * Get all saved data from localStorage
+ */
+function getGlobalData() {
+    try {
+        const stored = localStorage.getItem(STORAGE_KEY_ALL_DATA);
+        return stored ? JSON.parse(stored) : [];
+    } catch (e) { 
+        return []; 
+    }
+}
+
+/**
+ * Append new events to local backup
+ */
+function appendToDisk(newEvents) {
+    let all = getGlobalData();
+    all = all.concat(newEvents);
+    localStorage.setItem(STORAGE_KEY_ALL_DATA, JSON.stringify(all));
+}
+
+/**
+ * Save and upload video data (works for both practice and正式)
+ */
+async function saveAndUploadVideo(videoId, events, session) {
+    const vStr = videoId.toString();  // 'practice' or '1', '2', ...
+    
+    // Save to local backup
+    appendToDisk(events);
+    
+    // Prepare Netlify form data
+    const pid = getParticipantID();
+    const formData = new FormData();
+    formData.append('form-name', 'event-segmentation-data');
+    formData.append('prolific_pid', pid);
+    formData.append('study_id', 'korean_exp_v8');
+    
+    // Set session_id based on video type
+    if (videoId === 'practice') {
+        formData.append('session_id', `sess_${pid}_practice`);
+    } else {
+        formData.append('session_id', `sess_${pid}_session${session}`);
+    }
+    
+    formData.append('video_index', vStr); 
+    formData.append('events', JSON.stringify(events));
+    formData.append('completion_time', new Date().toISOString());
+    formData.append('bot-field', '');
+
+    try {
+        await fetch('/', { method: 'POST', body: formData });
+        console.log(`✅ Uploaded video ${vStr}`);
+    } catch (e) {
+        console.error(`❌ Upload failed for ${vStr}`);
+    }
+}
+
+/**
+ * Upload final summary of all data
+ */
+async function uploadFinalSummary() {
+    const allData = getGlobalData(); 
+    const pid = getParticipantID();
+
+    const formData = new FormData();
+    formData.append('form-name', 'event-segmentation-data');
+    formData.append('prolific_pid', pid);
+    formData.append('study_id', 'korean_exp_v8');
+    formData.append('session_id', `sess_${pid}_final`);
+    formData.append('video_index', 'ALL_SUMMARY_BACKUP'); 
+    formData.append('events', JSON.stringify(allData));
+    formData.append('completion_time', new Date().toISOString());
+    formData.append('bot-field', '');
+
+    try {
+        await fetch('/', { method: 'POST', body: formData });
+        console.log("✅ Final summary uploaded.");
+    } catch (e) {
+        console.error("❌ Final summary failed.");
+    }
+}
+</script>
+</body>
+</html>
