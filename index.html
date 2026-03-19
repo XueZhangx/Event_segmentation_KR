@@ -137,6 +137,8 @@
   <input type="hidden" name="session_id">
   <input type="hidden" name="video_index">
   <input type="hidden" name="events">
+  <input type="hidden" name="video_position_in_session">
+  <input type="hidden" name="video_position_display">
   <input type="hidden" name="completion_time">
   <input type="text" name="bot-field" style="display: none;">
 </form>
@@ -749,7 +751,8 @@ async function saveAndUploadVideo(videoId, events, session) {
     
     if (videoId === 'practice') {
         formData.append('session_id', `sess_${pid}_practice`);
-        formData.append('video_position', 'practice');
+        formData.append('video_position_in_session', 'practice');
+        formData.append('video_position_display', 'practice');
     } else {
         formData.append('session_id', `sess_${pid}_session${session}`);
         
