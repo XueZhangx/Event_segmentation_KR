@@ -202,7 +202,6 @@ let currentEvents = [];                       // Events for current video
 let sessionStartTime = null;                   // Session start timestamp
 let failedUploads = [];                        // Queue of failed uploads
 let videoUploadedCount = 0;                    // Counter for uploaded videos in current session
-let isSessionComplete = false;                  // Flag to indicate session completion
 
 // Auto-fill name on load
 window.addEventListener('DOMContentLoaded', () => {
@@ -520,7 +519,6 @@ document.getElementById('realStartBtn').addEventListener('click', function() {
     
     currentSession = session;
     currentVideoIndexInSession = videoIndex;
-    isSessionComplete = false;
     
     sessionStartTime = Date.now();
     localStorage.setItem(STORAGE_KEY_SESSION_START, sessionStartTime.toString());
@@ -540,11 +538,11 @@ function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
     currentSession = session;
     currentVideoIndexInSession = startVideoInSession;
     isPracticeMode = doPracticeFirst;
-    isSessionComplete = false;
     
     let evtCnt = 0;
     let fineTuning = false;
     let isTransitioning = false;
+    let isSessionComplete = false;
 
     const v = document.getElementById('v');
     const prompt = document.getElementById('prompt');
@@ -579,12 +577,6 @@ function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
         if (isSessionComplete) {
             return;
         }
-        
-        // Check if current session is complete
-        if (currentVideoIndexInSession >= VIDEOS_PER_SESSION) {
-            completeCurrentSession();
-            return;
-        }
 
         // Save current progress
         const progress = {
@@ -613,8 +605,6 @@ function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
     }
 
     async function completeCurrentSession() {
-        isSessionComplete = true;
-        
         const sessionEndTime = Date.now();
         const sessionStart = parseInt(localStorage.getItem(STORAGE_KEY_SESSION_START)) || sessionEndTime;
         const sessionDuration = Math.round((sessionEndTime - sessionStart) / 1000);
@@ -627,7 +617,6 @@ function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
         await uploadSessionSummary(currentSession, sessionData, sessionDuration);
         
         if (currentSession === 1) {
-            // Set next session but don't load video yet
             currentSession = 2;
             currentVideoIndexInSession = 0;
             localStorage.setItem(STORAGE_KEY_SESSION, '2');
@@ -639,7 +628,6 @@ function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
                                 이제 Session 2를 시작합니다.<br>
                                 아무 키나 눌러 첫 번째 영상을 시작하세요.`;
         } else if (currentSession === 2) {
-            // Set next session but don't load video yet
             currentSession = 3;
             currentVideoIndexInSession = 0;
             localStorage.setItem(STORAGE_KEY_SESSION, '3');
@@ -651,7 +639,6 @@ function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
                                 이제 Session 3를 시작합니다.<br>
                                 아무 키나 눌러 첫 번째 영상을 시작하세요.`;
         } else {
-            // All sessions complete
             finishAll();
             return;
         }
@@ -659,7 +646,7 @@ function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
         v.style.display = 'none';
         prompt.style.display = 'block';
         
-        // Reset session complete flag so next key press will load the video
+        // Reset for next session
         isSessionComplete = false;
     }
 
@@ -725,6 +712,9 @@ function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
         
         descBox.style.display = 'none';
         
+        // Check if this was the last video of the session
+        const isLastVideoOfSession = (currentVideoIndexInSession === VIDEOS_PER_SESSION - 1);
+        
         if(v.ended) {
             isTransitioning = true;
             
@@ -755,12 +745,19 @@ function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
             if (v.src.includes('practice')) {
                 currentSession = 1;
                 currentVideoIndexInSession = 0;
-                isSessionComplete = false;
                 localStorage.setItem(STORAGE_KEY_SESSION_START, Date.now().toString());
                 loadNext();
             } else {
-                currentVideoIndexInSession++; 
-                loadNext();
+                if (isLastVideoOfSession) {
+                    // This was the last video, complete the session
+                    currentVideoIndexInSession++; // Increment to trigger session completion
+                    isSessionComplete = true;
+                    completeCurrentSession();
+                } else {
+                    // Move to next video
+                    currentVideoIndexInSession++; 
+                    loadNext();
+                }
             }
         } else {
             safePlay(v);
@@ -777,7 +774,6 @@ function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
         if (v.src.includes('practice') && v.ended) {
             currentSession = 1;
             currentVideoIndexInSession = 0;
-            isSessionComplete = false;
             localStorage.setItem(STORAGE_KEY_SESSION_START, Date.now().toString());
             loadNext();
         } else {
@@ -834,8 +830,8 @@ function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
             prompt.style.display = 'none'; 
             v.style.display = 'block'; 
             
-            // If we're starting a new session, load the first video
-            if (currentVideoIndexInSession === 0 && !v.src) {
+            // If we're starting a new session, the video src might be empty
+            if (!v.src || v.src === '') {
                 loadNext();
             } else {
                 safePlay(v);
