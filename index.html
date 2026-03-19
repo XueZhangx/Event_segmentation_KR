@@ -202,6 +202,8 @@ let currentEvents = [];                       // Events for current video
 let sessionStartTime = null;                   // Session start timestamp
 let failedUploads = [];                        // Queue of failed uploads
 let videoUploadedCount = 0;                    // Counter for uploaded videos in current session
+let isPlaying = false;                         // Track play state to avoid conflicts
+let playPromise = null;                        // Store play promise for error handling
 
 // Auto-fill name on load
 window.addEventListener('DOMContentLoaded', () => {
@@ -224,6 +226,46 @@ window.addEventListener('DOMContentLoaded', () => {
     // Check for failed uploads
     checkFailedUploads();
 });
+
+/**
+ * Safe play function to handle play() interruptions
+ */
+async function safePlay(videoElement) {
+    if (!videoElement) return;
+    
+    try {
+        // If there's a pending play promise, wait for it
+        if (playPromise !== null) {
+            await playPromise;
+        }
+        
+        // Only try to play if video is paused
+        if (videoElement.paused) {
+            playPromise = videoElement.play();
+            await playPromise;
+            isPlaying = true;
+        }
+    } catch (error) {
+        // Ignore AbortError as it's expected when play is interrupted
+        if (error.name !== 'AbortError') {
+            console.error('Play error:', error);
+        }
+    } finally {
+        playPromise = null;
+    }
+}
+
+/**
+ * Safe pause function
+ */
+function safePause(videoElement) {
+    if (!videoElement) return;
+    
+    if (!videoElement.paused) {
+        videoElement.pause();
+        isPlaying = false;
+    }
+}
 
 /**
  * Show upload status message
@@ -332,34 +374,27 @@ function shuffleArray(array) {
 
 /**
  * Initialize randomization for videos and sessions
- * All 30 videos are randomly shuffled and then split into three sessions
  */
 function initializeRandomization() {
-    // Check if we have saved order
     const savedOrder = localStorage.getItem(STORAGE_KEY_VIDEO_ORDER);
     const savedSession = localStorage.getItem(STORAGE_KEY_SESSION);
     
     if (savedOrder && savedSession) {
-        // Restore previous state
         videoOrder = JSON.parse(savedOrder);
         currentSession = parseInt(savedSession);
         
-        // Rebuild sessionVideos from saved order
         sessionVideos[1] = videoOrder.slice(0, 10);
         sessionVideos[2] = videoOrder.slice(10, 20);
         sessionVideos[3] = videoOrder.slice(20, 30);
         
-        // Debug: Log session videos to check for duplicates
         console.log('Session 1 videos:', sessionVideos[1]);
         console.log('Session 2 videos:', sessionVideos[2]);
         console.log('Session 3 videos:', sessionVideos[3]);
         
-        // Check for duplicates
         const allVideos = [...sessionVideos[1], ...sessionVideos[2], ...sessionVideos[3]];
         const uniqueVideos = new Set(allVideos);
         if (uniqueVideos.size !== TOTAL_VIDEOS) {
             console.error('Duplicate videos detected! Resetting randomization...');
-            // Reset to fix duplicates
             localStorage.removeItem(STORAGE_KEY_VIDEO_ORDER);
             createNewRandomization();
         }
@@ -379,12 +414,10 @@ function createNewRandomization() {
     sessionVideos[2] = videoOrder.slice(10, 20);
     sessionVideos[3] = videoOrder.slice(20, 30);
     
-    // Verify no duplicates
     const allVideosCheck = [...sessionVideos[1], ...sessionVideos[2], ...sessionVideos[3]];
     const uniqueVideos = new Set(allVideosCheck);
     if (uniqueVideos.size !== TOTAL_VIDEOS) {
         console.error('Duplicate videos in new randomization! Shuffling again...');
-        // Recursive call to fix
         createNewRandomization();
         return;
     }
@@ -401,22 +434,18 @@ function createNewRandomization() {
 }
 
 /**
- * Show starter menu with clear options
+ * Show starter menu
  */
 function showStarterMenu() {
     const starter = document.getElementById('starter');
     const startSelect = document.getElementById('startSelect');
     
-    // Initialize randomization
     initializeRandomization();
     
-    // Get current progress
     const savedProgress = localStorage.getItem(STORAGE_KEY_PROGRESS);
     
-    // Populate start select
     startSelect.innerHTML = '';
     
-    // Option 0: Start from beginning (with practice) - DEFAULT
     const opt0 = document.createElement('option');
     opt0.value = '0_0';
     opt0.textContent = "0. 처음부터 시작 (연습 영상 포함) - Start from beginning (with practice)";
@@ -425,13 +454,11 @@ function showStarterMenu() {
     }
     startSelect.appendChild(opt0);
     
-    // Add separator
     const separator = document.createElement('option');
     separator.disabled = true;
     separator.textContent = "──────────────────";
     startSelect.appendChild(separator);
     
-    // Session 1 videos
     for(let i = 0; i < VIDEOS_PER_SESSION; i++) {
         const opt = document.createElement('option');
         opt.value = `1_${i}`;
@@ -446,13 +473,11 @@ function showStarterMenu() {
         startSelect.appendChild(opt);
     }
     
-    // Add separator
     const separator2 = document.createElement('option');
     separator2.disabled = true;
     separator2.textContent = "──────────────────";
     startSelect.appendChild(separator2);
     
-    // Session 2 videos
     for(let i = 0; i < VIDEOS_PER_SESSION; i++) {
         const opt = document.createElement('option');
         opt.value = `2_${i}`;
@@ -467,13 +492,11 @@ function showStarterMenu() {
         startSelect.appendChild(opt);
     }
     
-    // Add separator
     const separator3 = document.createElement('option');
     separator3.disabled = true;
     separator3.textContent = "──────────────────";
     startSelect.appendChild(separator3);
     
-    // Session 3 videos
     for(let i = 0; i < VIDEOS_PER_SESSION; i++) {
         const opt = document.createElement('option');
         opt.value = `3_${i}`;
@@ -512,12 +535,10 @@ document.getElementById('realStartBtn').addEventListener('click', function() {
     let session, videoIndex, doPracticeFirst;
     
     if (selectedValue === '0_0') {
-        // Start from beginning with practice
         session = 1;
         videoIndex = 0;
         doPracticeFirst = true;
     } else {
-        // Start from specific session and video
         [session, videoIndex] = selectedValue.split('_').map(Number);
         doPracticeFirst = false;
     }
@@ -525,11 +546,9 @@ document.getElementById('realStartBtn').addEventListener('click', function() {
     currentSession = session;
     currentVideoIndexInSession = videoIndex;
     
-    // Record session start time
     sessionStartTime = Date.now();
     localStorage.setItem(STORAGE_KEY_SESSION_START, sessionStartTime.toString());
     
-    // Reset video counter for this session
     videoUploadedCount = 0;
     
     localStorage.setItem(STORAGE_KEY_SESSION, currentSession.toString());
@@ -546,9 +565,9 @@ function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
     currentVideoIndexInSession = startVideoInSession;
     isPracticeMode = doPracticeFirst;
     
-    let evtCnt = 0;                          // Event counter for current video
-    let fineTuning = false;                   // Fine-tuning mode flag
-    let isTransitioning = false;               // Transition between videos flag
+    let evtCnt = 0;
+    let fineTuning = false;
+    let isTransitioning = false;
 
     const v = document.getElementById('v');
     const prompt = document.getElementById('prompt');
@@ -558,18 +577,13 @@ function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
     const evNumSpan = document.getElementById('evNum');
     const adjustHint = document.getElementById('adjustHint');
 
-    // Load first video
     loadNext();
 
-    /**
-     * Load the next video in sequence
-     */
     function loadNext() {
         isTransitioning = false;
         
-        // Handle practice mode first
         if (isPracticeMode) {
-            isPracticeMode = false;  // Clear flag after loading practice
+            isPracticeMode = false;
             v.src = 'practice.mp4';
             prompt.innerHTML = `<span style="color:#4CAF50; font-weight:bold;">[연습 단계 Practice]</span><br><br>
                                 연습용 동영상입니다. 실제 실험 전에 조작 방법을 연습해보세요.<br>
@@ -583,14 +597,11 @@ function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
             return;
         }
         
-        // Check if current session is complete
         if (currentVideoIndexInSession >= VIDEOS_PER_SESSION) {
-            // Session is complete - upload summary and move to next session
             completeCurrentSession();
             return;
         }
 
-        // Save current progress
         const progress = {
             session: currentSession,
             videoIndex: currentVideoIndexInSession,
@@ -598,11 +609,8 @@ function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
         };
         localStorage.setItem(STORAGE_KEY_PROGRESS, JSON.stringify(progress));
 
-        // Get actual video number from session order
         const actualVideoNumber = sessionVideos[currentSession][currentVideoIndexInSession];
-        
-        // Load the video
-        v.src = `v${actualVideoNumber}.mp4`;  // Video files: v1.mp4 to v30.mp4
+        v.src = `v${actualVideoNumber}.mp4`;
         
         prompt.innerHTML = `세션 ${currentSession} - 영상 ${currentVideoIndexInSession + 1} / ${VIDEOS_PER_SESSION}<br>
                             시작하려면 아무 키나 누르세요.`;
@@ -616,27 +624,19 @@ function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
         fineTuning = false;
     }
 
-    /**
-     * Complete current session and upload summary
-     */
     async function completeCurrentSession() {
         const sessionEndTime = Date.now();
         const sessionStart = parseInt(localStorage.getItem(STORAGE_KEY_SESSION_START)) || sessionEndTime;
-        const sessionDuration = Math.round((sessionEndTime - sessionStart) / 1000); // in seconds
+        const sessionDuration = Math.round((sessionEndTime - sessionStart) / 1000);
         
-        // Get all data for this session from local backup
         const allData = getGlobalData();
         const sessionData = allData.filter(d => d.session === currentSession && d.vid !== 'practice');
         
         console.log(`Session ${currentSession} completed with ${sessionData.length} videos`);
-        console.log('Session data:', sessionData);
         
-        // Upload session summary
         await uploadSessionSummary(currentSession, sessionData, sessionDuration);
         
-        // Move to next session or finish
         if (currentSession === 1) {
-            // Session 1 complete, move to Session 2
             currentSession = 2;
             currentVideoIndexInSession = 0;
             localStorage.setItem(STORAGE_KEY_SESSION, '2');
@@ -648,7 +648,6 @@ function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
                                 이제 Session 2를 시작합니다.<br><br>
                                 준비가 되면 아무 키나 눌러주세요.`;
         } else if (currentSession === 2) {
-            // Session 2 complete, move to Session 3
             currentSession = 3;
             currentVideoIndexInSession = 0;
             localStorage.setItem(STORAGE_KEY_SESSION, '3');
@@ -660,7 +659,6 @@ function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
                                 이제 Session 3를 시작합니다.<br><br>
                                 준비가 되면 아무 키나 눌러주세요.`;
         } else {
-            // All sessions complete
             finishAll();
             return;
         }
@@ -669,38 +667,32 @@ function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
         prompt.style.display = 'block';
     }
 
-    /**
-     * Format duration in minutes and seconds
-     */
     function formatDuration(seconds) {
         const mins = Math.floor(seconds / 60);
         const secs = seconds % 60;
         return `${mins}분 ${secs}초`;
     }
 
-    /**
-     * Pause video and enter fine-tuning mode
-     */
     function pauseAndFineTune() {
-        if(v.paused && fineTuning) {
+        if (fineTuning) {
+            // Exit fine-tuning mode and resume playback
             fineTuning = false;
             adjustHint.style.display = 'none';
-            v.play();
-            return;
+            safePlay(v);
+        } else {
+            // Enter fine-tuning mode
+            safePause(v);
+            fineTuning = true;
+            adjustHint.style.display = 'block';
         }
-        v.pause();
-        fineTuning = true;
-        adjustHint.style.display = 'block';
     }
 
-    /**
-     * Confirm event time and proceed to description
-     */
     function confirmEnd() {
+        if (!fineTuning) return; // Only confirm when in fine-tuning mode
+        
         fineTuning = false;
         adjustHint.style.display = 'none';
         
-        // Determine video ID (practice or number)
         let videoId;
         if (v.src.includes('practice')) {
             videoId = 'practice';
@@ -724,9 +716,6 @@ function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
         descInput.focus();
     }
 
-    /**
-     * Save description and proceed
-     */
     async function saveDesc() {
         if(isTransitioning) return;
         
@@ -737,7 +726,6 @@ function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
             return; 
         }
         
-        // Update the last event's description
         const lastIdx = currentEvents.length - 1;
         if(lastIdx >= 0) currentEvents[lastIdx].desc = txt;
         
@@ -752,10 +740,8 @@ function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
             prompt.style.display = 'block';
             v.style.display = 'none';
 
-            // Get video ID for upload
             const videoId = currentEvents[0]?.vid || 'unknown';
             
-            // Upload video data with retry mechanism
             const sessionStart = localStorage.getItem(STORAGE_KEY_SESSION_START);
             const success = await saveAndUploadVideoWithRetry(
                 videoId, 
@@ -773,34 +759,27 @@ function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
             }
             
             if (v.src.includes('practice')) {
-                // Practice video ended, move to first real video
                 currentSession = 1;
                 currentVideoIndexInSession = 0;
                 localStorage.setItem(STORAGE_KEY_SESSION_START, Date.now().toString());
                 loadNext();
             } else {
-                // Move to next video
                 currentVideoIndexInSession++; 
                 loadNext();
             }
         } else {
-            v.play();
+            safePlay(v);
         }
     }
 
-    /**
-     * Cancel description entry
-     */
     function cancelDescription() {
         descBox.style.display = 'none';
         
-        // Remove the last event
         currentEvents.pop();
         evtCnt--;
         counter.textContent = 'Events: ' + Math.max(0, evtCnt);
         
         if (v.src.includes('practice') && v.ended) {
-            // Practice video ended and cancelled, move to first real video
             currentSession = 1;
             currentVideoIndexInSession = 0;
             localStorage.setItem(STORAGE_KEY_SESSION_START, Date.now().toString());
@@ -812,15 +791,11 @@ function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
         }
     }
 
-    /**
-     * Complete all sessions
-     */
     async function finishAll() {
         const finalSessionEnd = Date.now();
         const sessionStart = parseInt(localStorage.getItem(STORAGE_KEY_SESSION_START)) || finalSessionEnd;
         const sessionDuration = Math.round((finalSessionEnd - sessionStart) / 1000);
         
-        // Upload final session summary for Session 3
         const allData = getGlobalData();
         const session3Data = allData.filter(d => d.session === 3 && d.vid !== 'practice');
         await uploadSessionSummary(3, session3Data, sessionDuration);
@@ -830,7 +805,6 @@ function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
         
         await uploadFinalSummary();
 
-        // Clear progress but keep video order
         localStorage.removeItem(STORAGE_KEY_PROGRESS);
         localStorage.removeItem(STORAGE_KEY_SESSION_START);
 
@@ -846,31 +820,26 @@ function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
         }, 1000);
     }
 
-    // Event listeners
     document.getElementById('okBtn').onclick = saveDesc;
     document.getElementById('cancelBtn').onclick = cancelDescription;
 
-    // Keyboard controls
     document.onkeydown = (e) => {
         if(document.getElementById('experiment').style.display === 'none') return;
         
-        // Handle input field separately
         if(document.activeElement.id === 'descInput') {
             if(e.code === 'Enter'){ e.preventDefault(); saveDesc(); }
             if(e.code === 'Escape') { e.preventDefault(); cancelDescription(); }
             return;
         }
         
-        // Start video when any key pressed on prompt screen
         if(v.style.display === 'none' && prompt.style.display !== 'none' && e.target.tagName !== 'INPUT') {
-            if(isTransitioning) return; // Block during upload
+            if(isTransitioning) return;
             prompt.style.display = 'none'; 
             v.style.display = 'block'; 
-            v.play(); 
+            safePlay(v);
             return;
         }
         
-        // Video controls
         if(v.style.display !== 'none') {
             if(e.code === 'Space'){ 
                 e.preventDefault(); 
@@ -893,11 +862,10 @@ function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
         }
     };
 
-    // Video ended event
     v.onended = () => {
         const finalTime = v.duration; 
+        isPlaying = false;
         
-        // Determine video ID (practice or number)
         let videoId;
         if (v.src.includes('practice')) {
             videoId = 'practice';
@@ -924,9 +892,6 @@ function initializeExperiment(session, startVideoInSession, doPracticeFirst) {
 
 // ====== 4. Upload Core (Netlify Forms) ======
 
-/**
- * Get all saved data from localStorage
- */
 function getGlobalData() {
     try {
         const stored = localStorage.getItem(STORAGE_KEY_ALL_DATA);
@@ -936,25 +901,17 @@ function getGlobalData() {
     }
 }
 
-/**
- * Append new events to local backup
- */
 function appendToDisk(newEvents) {
     let all = getGlobalData();
     all = all.concat(newEvents);
     localStorage.setItem(STORAGE_KEY_ALL_DATA, JSON.stringify(all));
 }
 
-/**
- * Save and upload video data with retry mechanism
- */
 async function saveAndUploadVideoWithRetry(videoId, events, session, positionInSession, sessionStartTime) {
     const vStr = videoId.toString();
     
-    // Save to local backup first (always)
     appendToDisk(events);
     
-    // Prepare upload data
     const pid = getParticipantID();
     const formData = new FormData();
     formData.append('form-name', 'event-segmentation-kr');
@@ -1002,9 +959,6 @@ async function saveAndUploadVideoWithRetry(videoId, events, session, positionInS
     }
 }
 
-/**
- * Upload session summary
- */
 async function uploadSessionSummary(sessionNum, sessionData, durationSeconds) {
     const pid = getParticipantID();
     const formData = new FormData();
@@ -1034,18 +988,12 @@ async function uploadSessionSummary(sessionNum, sessionData, durationSeconds) {
     }
 }
 
-/**
- * Format duration helper
- */
 function formatDuration(seconds) {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}분 ${secs}초`;
 }
 
-/**
- * Upload final summary of all data
- */
 async function uploadFinalSummary() {
     const allData = getGlobalData(); 
     const pid = getParticipantID();
