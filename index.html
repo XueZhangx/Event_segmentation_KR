@@ -735,36 +735,36 @@ function appendToDisk(newEvents) {
 }
 
 /**
- * Save and upload video data (works for both practice and正式)
+ * Save and upload video data (works for both practice and official)
  */
 async function saveAndUploadVideo(videoId, events, session) {
-    const vStr = videoId.toString();  // 'practice' or '1', '2', ...
+    const vStr = videoId.toString();
     
-    // Save to local backup
-    appendToDisk(events);
     
-    // Prepare Netlify form data
     const pid = getParticipantID();
     const formData = new FormData();
     formData.append('form-name', 'event-segmentation-kr');
     formData.append('prolific_pid', pid);
     formData.append('study_id', 'korean_exp_v8');
     
-    // Set session_id based on video type
     if (videoId === 'practice') {
         formData.append('session_id', `sess_${pid}_practice`);
+        formData.append('video_position', 'practice');
     } else {
         formData.append('session_id', `sess_${pid}_session${session}`);
+        
+        formData.append('video_position_in_session', (currentVideoIndexInSession + 1).toString());
+        formData.append('video_position_display', `${currentVideoIndexInSession + 1}/${VIDEOS_PER_SESSION}`);
     }
     
-    formData.append('video_index', vStr); 
+    formData.append('video_index', vStr);
     formData.append('events', JSON.stringify(events));
     formData.append('completion_time', new Date().toISOString());
     formData.append('bot-field', '');
 
     try {
         await fetch('/', { method: 'POST', body: formData });
-        console.log(`✅ Uploaded video ${vStr}`);
+        console.log(`✅ Uploaded video ${vStr} (Position: ${videoId === 'practice' ? 'practice' : currentVideoIndexInSession + 1}/${VIDEOS_PER_SESSION})`);
     } catch (e) {
         console.error(`❌ Upload failed for ${vStr}`);
     }
